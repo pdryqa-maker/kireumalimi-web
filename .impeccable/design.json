@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-11T11:36:35+00:00",
+  "title": "Design System: 기름알리미",
+  "extensions": {
+    "colorMeta": {
+      "stone-ground": {
+        "role": "neutral",
+        "displayName": "Stone Ground",
+        "canonical": "#e4e2da",
+        "tonalRamp": [
+          "#2a2925",
+          "#45433c",
+          "#615e55",
+          "#7f7b70",
+          "#a09a88",
+          "#c2beb1",
+          "#e4e2da",
+          "#f4f3ee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1b1c18",
+        "tonalRamp": [
+          "#1b1c18",
+          "#30312b",
+          "#47483f",
+          "#5f6055",
+          "#7a7a6e",
+          "#9a9a8e",
+          "#c3c3b8",
+          "#ebebe4"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "#57574d",
+        "tonalRamp": [
+          "#25251f",
+          "#3a3a33",
+          "#57574d",
+          "#6f6f64",
+          "#8a8a7e",
+          "#a8a89c",
+          "#cbcbc0",
+          "#ecece5"
+        ]
+      },
+      "yuilmui-yellow": {
+        "role": "primary",
+        "displayName": "유일무이 Yellow",
+        "canonical": "#ffd95a",
+        "tonalRamp": [
+          "#3d2f00",
+          "#614c00",
+          "#8a6c00",
+          "#b48f0f",
+          "#dcb22e",
+          "#ffd95a",
+          "#ffe795",
+          "#fff5d6"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#cfccc1",
+        "tonalRamp": [
+          "#2c2b26",
+          "#48463f",
+          "#66635a",
+          "#868275",
+          "#a6a293",
+          "#cfccc1",
+          "#e2e0d8",
+          "#f3f2ed"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Empty-state question only; 1.5rem below 640px, 1.875rem above."
+      },
+      "price": {
+        "displayName": "Price",
+        "purpose": "Every won amount and count; 1.25rem in ranked lists. Tabular numerals."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Station names, detail headings, suggested questions (500)."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Answers, user questions, composer text."
+      },
+      "card-label": {
+        "displayName": "Card label",
+        "purpose": "Plain Soft Ink title stating what a result card holds."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "기준 시각 tags, notes, addresses, footer source line."
+      }
+    },
+    "shadows": [
+      {
+        "name": "raised",
+        "value": "9px 9px 20px rgb(160 154 136 / 0.5), -9px -9px 20px rgb(255 255 252 / 0.9)",
+        "purpose": "Panel, answer cards, skeleton card, empty-state suggestions."
+      },
+      {
+        "name": "raised-sm",
+        "value": "4px 4px 10px rgb(160 154 136 / 0.5), -4px -4px 10px rgb(255 255 252 / 0.9)",
+        "purpose": "Small controls: chips, retry, send, active fuel."
+      },
+      {
+        "name": "inset",
+        "value": "inset 4px 4px 9px rgb(160 154 136 / 0.45), inset -4px -4px 9px rgb(255 255 252 / 0.85)",
+        "purpose": "User questions, composer input, pressed large buttons."
+      },
+      {
+        "name": "inset-sm",
+        "value": "inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)",
+        "purpose": "Read-only wells: time tags, region tag, figure tiles, fuel track, grooves, row hover."
+      }
+    ],
+    "motion": [
+      {
+        "name": "rise",
+        "value": "280ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Answers lift 3px from a near-flat shadow into raised."
+      },
+      {
+        "name": "press",
+        "value": "280ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "A sent question sinks from raised-sm into inset."
+      },
+      {
+        "name": "groove",
+        "value": "1.4s ease-in-out infinite",
+        "purpose": "Glint sweeping across skeleton grooves."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "1ms, 1 iteration",
+        "purpose": "All animation and transition collapse under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Suggestion Button",
+      "kind": "button",
+      "refersTo": "suggestion-button",
+      "description": "Full-width raised question key in the empty state; presses in when tapped.",
+      "html": "<button class=\"ds-suggest\">울주군에서 제일 싼 휘발유 어디야?</button>",
+      "css": ".ds-suggest { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); width: 100%; text-align: left; font-size: 16px; font-weight: 500; color: var(--ink, #1b1c18); background: var(--ground, #e4e2da); border: none; border-radius: 1rem; padding: 16px 20px; box-shadow: var(--shadow-raised, 9px 9px 20px rgb(160 154 136 / 0.5), -9px -9px 20px rgb(255 255 252 / 0.9)); transition: box-shadow 150ms; cursor: pointer; } .ds-suggest:hover { box-shadow: var(--shadow-raised-sm, 4px 4px 10px rgb(160 154 136 / 0.5), -4px -4px 10px rgb(255 255 252 / 0.9)); } .ds-suggest:active { box-shadow: var(--shadow-inset, inset 4px 4px 9px rgb(160 154 136 / 0.45), inset -4px -4px 9px rgb(255 255 252 / 0.85)); } .ds-suggest:focus-visible { outline: 2px solid var(--ink, #1b1c18); outline-offset: 3px; }"
+    },
+    {
+      "name": "Suggestion Chip",
+      "kind": "chip",
+      "refersTo": "suggestion-chip",
+      "description": "Follow-up question pill under the conversation.",
+      "html": "<button class=\"ds-chip\">지난 고시 뒤 우리 동네는?</button>",
+      "css": ".ds-chip { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); font-size: 14px; color: var(--ink, #1b1c18); background: var(--ground, #e4e2da); border: none; border-radius: 9999px; padding: 8px 14px; white-space: nowrap; box-shadow: var(--shadow-raised-sm, 4px 4px 10px rgb(160 154 136 / 0.5), -4px -4px 10px rgb(255 255 252 / 0.9)); transition: box-shadow 150ms; cursor: pointer; } .ds-chip:hover { box-shadow: var(--shadow-raised, 9px 9px 20px rgb(160 154 136 / 0.5), -9px -9px 20px rgb(255 255 252 / 0.9)); } .ds-chip:active { box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); } .ds-chip:focus-visible { outline: 2px solid var(--ink, #1b1c18); outline-offset: 3px; } .ds-chip:disabled { opacity: 0.5; }"
+    },
+    {
+      "name": "Send Button",
+      "kind": "button",
+      "refersTo": "send-button",
+      "description": "Yellow raised circle with inline SVG arrow; the one accent action.",
+      "html": "<button class=\"ds-send\" aria-label=\"질문 보내기\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 19V5\"/><path d=\"m5 12 7-7 7 7\"/></svg></button>",
+      "css": ".ds-send { display: grid; place-items: center; width: 48px; height: 48px; border: none; border-radius: 9999px; background: var(--accent, #ffd95a); color: var(--ink, #1b1c18); box-shadow: var(--shadow-raised-sm, 4px 4px 10px rgb(160 154 136 / 0.5), -4px -4px 10px rgb(255 255 252 / 0.9)); transition: box-shadow 150ms; cursor: pointer; } .ds-send:hover { box-shadow: var(--shadow-raised, 9px 9px 20px rgb(160 154 136 / 0.5), -9px -9px 20px rgb(255 255 252 / 0.9)); } .ds-send:active, .ds-send:disabled { box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); } .ds-send:focus-visible { outline: 2px solid var(--ink, #1b1c18); outline-offset: 3px; }"
+    },
+    {
+      "name": "Composer Input",
+      "kind": "input",
+      "refersTo": "composer-input",
+      "description": "Inset pill text field docked at the panel bottom.",
+      "html": "<input class=\"ds-input\" placeholder=\"예: 언양 쪽 경유 제일 싼 곳 알려 줘\" aria-label=\"질문 입력\">",
+      "css": ".ds-input { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); width: 100%; font-size: 15px; color: var(--ink, #1b1c18); background: transparent; border: none; border-radius: 9999px; padding: 14px 20px; box-shadow: var(--shadow-inset, inset 4px 4px 9px rgb(160 154 136 / 0.45), inset -4px -4px 9px rgb(255 255 252 / 0.85)); } .ds-input::placeholder { color: var(--ink-soft, #57574d); } .ds-input:focus-visible { outline: 2px solid var(--ink, #1b1c18); outline-offset: 1px; }"
+    },
+    {
+      "name": "Fuel Switch",
+      "kind": "chip",
+      "refersTo": "fuel-switch-active",
+      "description": "Inset track with a yellow raised active option; a radio group.",
+      "html": "<div class=\"ds-fuel\" role=\"radiogroup\" aria-label=\"유종\"><button role=\"radio\" aria-checked=\"true\" class=\"ds-fuel-opt is-on\">휘발유</button><button role=\"radio\" aria-checked=\"false\" class=\"ds-fuel-opt\">경유</button></div>",
+      "css": ".ds-fuel { display: inline-flex; padding: 4px; border-radius: 9999px; background: var(--ground, #e4e2da); box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); } .ds-fuel-opt { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); font-size: 14px; font-weight: 600; color: var(--ink-soft, #57574d); background: transparent; border: none; border-radius: 9999px; padding: 6px 14px; transition: box-shadow 150ms; cursor: pointer; } .ds-fuel-opt.is-on { background: var(--accent, #ffd95a); color: var(--ink, #1b1c18); box-shadow: var(--shadow-raised-sm, 4px 4px 10px rgb(160 154 136 / 0.5), -4px -4px 10px rgb(255 255 252 / 0.9)); } .ds-fuel-opt:focus-visible { outline: 2px solid var(--ink, #1b1c18); outline-offset: 3px; }"
+    },
+    {
+      "name": "Basis Tag",
+      "kind": "chip",
+      "refersTo": "basis-tag",
+      "description": "Inset read-only pill stating when a price was reported.",
+      "html": "<span class=\"ds-basis\">11월 11일 07:10 기준</span>",
+      "css": ".ds-basis { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); display: inline-block; font-size: 12px; font-weight: 500; color: var(--ink-soft, #57574d); font-variant-numeric: tabular-nums; border-radius: 9999px; padding: 4px 10px; background: var(--ground, #e4e2da); box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); }"
+    },
+    {
+      "name": "Price List Card",
+      "kind": "card",
+      "refersTo": "answer-card",
+      "description": "Raised answer card: card label, 조회 tag, hairline-divided station rows with bold tabular prices.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-head\"><span class=\"ds-card-label\">울주군 휘발유 최저가</span><span class=\"ds-tag\">11월 11일 20:31 조회</span></div><button class=\"ds-row\"><span class=\"ds-rank\">1</span><span class=\"ds-name\">울산주유소 <small>GS칼텍스</small><span class=\"ds-addr\">울산 울주군 청량면 용운로 1035</span></span><span class=\"ds-price\">1,785<small>원</small></span></button><button class=\"ds-row\"><span class=\"ds-rank\">2</span><span class=\"ds-name\">울리셀프주유소 <small>S-OIL</small><span class=\"ds-addr\">울산 울주군 청량면 용운로 1044</span></span><span class=\"ds-price\">1,785<small>원</small></span></button><p class=\"ds-note\">오피넷에 보고된 가격이라 주유소 현장 가격과 다를 수 있어요.</p></div>",
+      "css": ".ds-card { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); max-width: 34rem; color: var(--ink, #1b1c18); background: var(--ground, #e4e2da); border-radius: 1.5rem; padding: 20px; box-shadow: var(--shadow-raised, 9px 9px 20px rgb(160 154 136 / 0.5), -9px -9px 20px rgb(255 255 252 / 0.9)); } .ds-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; } .ds-card-label { font-size: 14px; font-weight: 600; color: var(--ink-soft, #57574d); } .ds-tag { font-size: 12px; font-weight: 500; color: var(--ink-soft, #57574d); font-variant-numeric: tabular-nums; border-radius: 9999px; padding: 4px 10px; box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); } .ds-row { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; color: var(--ink, #1b1c18); background: transparent; border: none; border-top: 1px solid var(--hairline, #cfccc1); border-radius: 1rem; padding: 12px 8px; transition: box-shadow 150ms; cursor: pointer; } .ds-card-head + .ds-row { border-top: none; } .ds-row:hover { box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); } .ds-row:active { box-shadow: var(--shadow-inset, inset 4px 4px 9px rgb(160 154 136 / 0.45), inset -4px -4px 9px rgb(255 255 252 / 0.85)); } .ds-row:focus-visible { outline: 2px solid var(--ink, #1b1c18); outline-offset: 3px; } .ds-rank { width: 16px; font-size: 14px; color: var(--ink-soft, #57574d); font-variant-numeric: tabular-nums; } .ds-name { flex: 1; font-weight: 600; } .ds-name small { font-size: 14px; font-weight: 400; color: var(--ink-soft, #57574d); } .ds-addr { display: block; font-size: 12px; font-weight: 400; color: var(--ink-soft, #57574d); } .ds-price { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; } .ds-price small { margin-left: 2px; font-size: 14px; font-weight: 500; } .ds-note { margin: 12px 0 0; font-size: 12px; color: var(--ink-soft, #57574d); }"
+    },
+    {
+      "name": "Notice Figure Tile",
+      "kind": "custom",
+      "description": "Inset well holding one count or amount from the past-notice record.",
+      "html": "<div class=\"ds-figure\"><span class=\"ds-fig-label\">아직 그대로</span><span class=\"ds-fig-value\">13<small>곳</small></span><span class=\"ds-fig-note\">93곳 중</span></div>",
+      "css": ".ds-figure { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); display: inline-flex; flex-direction: column; min-width: 120px; color: var(--ink, #1b1c18); background: var(--ground, #e4e2da); border-radius: 1rem; padding: 12px; box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); } .ds-fig-label, .ds-fig-note { font-size: 12px; color: var(--ink-soft, #57574d); } .ds-fig-value { margin-top: 4px; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; } .ds-fig-value small { margin-left: 2px; font-size: 14px; font-weight: 500; }"
+    },
+    {
+      "name": "User Question",
+      "kind": "custom",
+      "description": "The visitor's message, pressed into the surface; bottom-right corner pinched.",
+      "html": "<p class=\"ds-question\">울주군에서 제일 싼 휘발유 어디야?</p>",
+      "css": ".ds-question { font-family: var(--font-sans, 'Pretendard Variable', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif); width: fit-content; max-width: 85%; margin: 0 0 0 auto; font-size: 15px; color: var(--ink, #1b1c18); background: var(--ground, #e4e2da); border-radius: 1rem 1rem 6px 1rem; padding: 10px 16px; box-shadow: var(--shadow-inset, inset 4px 4px 9px rgb(160 154 136 / 0.45), inset -4px -4px 9px rgb(255 255 252 / 0.85)); }"
+    },
+    {
+      "name": "Groove Skeleton",
+      "kind": "custom",
+      "description": "Raised card of inset pill grooves with a sweeping glint while an answer loads.",
+      "html": "<div class=\"ds-skel\" role=\"status\"><div class=\"ds-groove\" style=\"width:92%\"></div><div class=\"ds-groove\" style=\"width:78%\"></div><div class=\"ds-groove\" style=\"width:54%\"></div></div>",
+      "css": ".ds-skel { display: grid; gap: 16px; max-width: 34rem; background: var(--ground, #e4e2da); border-radius: 1.5rem; padding: 20px; box-shadow: var(--shadow-raised, 9px 9px 20px rgb(160 154 136 / 0.5), -9px -9px 20px rgb(255 255 252 / 0.9)); } .ds-groove { height: 14px; border-radius: 9999px; box-shadow: var(--shadow-inset-sm, inset 2px 2px 5px rgb(160 154 136 / 0.45), inset -2px -2px 5px rgb(255 255 252 / 0.85)); background: linear-gradient(100deg, transparent 30%, rgb(255 255 252 / 0.75) 50%, transparent 70%) var(--ground, #e4e2da); background-size: 220% 100%; animation: ds-groove 1.4s ease-in-out infinite; } @keyframes ds-groove { from { background-position: 120% 0; } to { background-position: -20% 0; } } @media (prefers-reduced-motion: reduce) { .ds-groove { animation: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Pressed Stone Console",
+    "overview": "The whole interface is cut from one warm stone-grey material. Nothing is painted on top of it: every control, card, and tag is the same ground color, and form comes only from paired light and shade, a cool highlight from the upper left and a warm shadow to the lower right. What the visitor asks presses into the surface; what the service answers rises out of it. Loading is not a spinner but grooves in the stone catching a moving glint.\n\nIt is a working screen, not a showcase. Density is moderate, one column, one large raised panel holding the conversation and a docked composer. Numbers are the loudest thing on the material: prices in heavy tabular figures in near-black ink, always next to a pressed tag stating when they were reported. The one accent is the yellow of the team 유일무이 mark, and it marks only what is \"on\": the active fuel, the send control, selected text.\n\nRejected looks, confirmed for this product: the default chat app of flat bubbles on white with a gradient send button, and anything that resembles 오피넷 or 한국석유공사 pages, logos, or colors.",
+    "keyCharacteristics": [
+      "One material (stone ground), depth by paired light/shade shadows only.",
+      "Questions inset, answers raised; skeletons are inset grooves.",
+      "Near-black ink for all text; one yellow accent for \"on\" states.",
+      "Prices in bold tabular numerals, each paired with its 기준 시각.",
+      "Pretendard throughout, Korean word-keeping line breaks."
+    ],
+    "rules": [
+      {
+        "name": "The One Material Rule",
+        "body": "Every surface is Stone Ground. Separate things by raising or pressing them, never by giving them another fill. The only exception is yellow for an \"on\" state.",
+        "section": "colors"
+      },
+      {
+        "name": "The Yellow Means On Rule",
+        "body": "Yellow marks the active choice and the send action, nothing else: not headings, not decoration, not warnings.",
+        "section": "colors"
+      },
+      {
+        "name": "The Numbers Win Rule",
+        "body": "On any answer, the price or count is the heaviest, largest type on its card. Nothing decorative may outweigh it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number that can sit above or beside another number uses tabular numerals (rank, price, count, time).",
+        "section": "typography"
+      },
+      {
+        "name": "The Press In, Rise Out Rule",
+        "body": "What the visitor contributes is inset; what the service returns is raised. Read-only information wells (tags, figures) are inset small.",
+        "section": "elevation"
+      },
+      {
+        "name": "The State Is Depth Rule",
+        "body": "Interaction states move along the depth axis: hover steps raised toward smaller (or into a small inset for list rows), active presses into inset, disabled sinks to inset small or drops to 50% opacity.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do build every surface from Stone Ground (#e4e2da) and give it form with the Raised or Inset shadow pairs.",
+      "Do inset what the visitor sends and raise what the service returns.",
+      "Do set every price and count in bold tabular numerals and pair every price with an inset 기준 시각 tag.",
+      "Do keep all text in Ink or Soft Ink; Soft Ink (#57574d) is the lightest text color allowed on the ground.",
+      "Do put ink text and a Raised small shadow on any yellow control so it reads by more than color.",
+      "Do draw icons as inline SVG strokes in currentColor.",
+      "Do honor reduced motion by collapsing rise, press, and groove."
+    ],
+    "donts": [
+      "Don't fill a surface with any color other than the ground, except yellow for an \"on\" state.",
+      "Don't use yellow for text, headings, borders, or decoration; it disappears against the ground (1.06:1).",
+      "Don't use flat bubbles on white, gradient send buttons, spinners, or emoji.",
+      "Don't use hard or colored shadows; shadows are always the warm shade and near-white light pair.",
+      "Don't let any decorative element outweigh the price on a card.",
+      "Don't borrow 오피넷 or 한국석유공사 logos, colors, or page design."
+    ]
+  }
+}

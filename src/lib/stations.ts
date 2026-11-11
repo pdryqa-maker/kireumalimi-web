@@ -1,5 +1,5 @@
 // 챗봇이 쓸 주유소 조회 기능. 화면의 결과 카드와 나중에 붙일 AI 도구가 함께 쓴다.
-import { fetchOpinet } from "@/lib/opinet";
+import { fetchOpinet, fetchOpinetTimed } from "@/lib/opinet";
 
 export const FUEL_CODES: Record<string, string> = {
   휘발유: "B027",
@@ -60,10 +60,12 @@ export async function findCheapest(fuel: string, area: string, count = 5) {
   if (!prodcd || !(area in ULSAN_AREAS)) {
     throw new RangeError("지원하지 않는 유종 또는 지역입니다.");
   }
-  const body = await fetchOpinet("lowTop10", { prodcd, area, cnt: String(count) });
+  const { body, fetchedAt } = await fetchOpinetTimed("lowTop10", { prodcd, area, cnt: String(count) });
   return {
     fuel,
     area: ULSAN_AREAS[area],
+    // 최저가 API에는 가격별 기준 시각이 없어, 오피넷에서 조회한 시각을 따로 준다(상세 정보의 기준 시각과 다름).
+    fetchedAt,
     stations: rows(body).map((row) => ({
       id: String(row.UNI_ID),
       name: String(row.OS_NM),

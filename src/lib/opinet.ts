@@ -2,11 +2,12 @@
 const CACHE_MS = 10 * 60 * 1000; // 일반 키 한도(하루 300회)를 아끼기 위해 같은 요청은 10분간 재사용
 
 // Next의 fetch 캐시는 요청 주소를 파일에 남겨 인증키가 디스크에 저장되므로 메모리에만 보관한다.
-const cache = new Map<string, { expires: number; body: unknown }>();
+const cache = new Map<string, { expires: number; body: unknown; fetchedAt: string }>();
 
 export class OpinetError extends Error {}
 
-export async function fetchOpinet(endpoint: string, query: Record<string, string> | URLSearchParams) {
+// 응답과 함께 오피넷에서 실제로 받아 온 시각(ISO)을 돌려준다. 캐시에서 꺼내도 처음 받은 시각이다.
+export async function fetchOpinetTimed(endpoint: string, query: Record<string, string> | URLSearchParams) {
   const key = process.env.OPINET_API_KEY;
   if (!key) {
     throw new OpinetError("OPINET_API_KEY가 설정되지 않았습니다.");
@@ -18,7 +19,7 @@ export async function fetchOpinet(endpoint: string, query: Record<string, string
   const cacheKey = `${endpoint}?${params}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
-    return cached.body;
+    return { body: cached.body, fetchedAt: cached.fetchedAt };
   }
 
   params.set("code", key);
@@ -35,6 +36,11 @@ export async function fetchOpinet(endpoint: string, query: Record<string, string
     // 원래 오류에는 인증키가 든 주소가 포함될 수 있어 버린다.
     throw new OpinetError("오피넷 호출에 실패했습니다.");
   }
-  cache.set(cacheKey, { expires: Date.now() + CACHE_MS, body });
-  return body;
+  const fetchedAt = new Date().toISOString();
+  cache.set(cacheKey, { expires: Date.now() + CACHE_MS, body, fetchedAt });
+  return { body, fetchedAt };
+}
+
+export async function fetchOpinet(endpoint: string, query: Record<string, string> | URLSearchParams) {
+  return (await fetchOpinetTimed(endpoint, query)).body;
 }

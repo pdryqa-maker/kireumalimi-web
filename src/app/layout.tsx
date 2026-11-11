@@ -1,32 +1,34 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import localFont from "next/font/local";
+import Image from "next/image";
 import "./globals.css";
+
+const pretendard = localFont({
+  src: "../../node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2",
+  variable: "--font-pretendard",
+  weight: "45 920",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "기름알리미",
-  description: "기름이 떨어지기 전에 먼저 알려 주고, 말로 물으면 답하는 AI",
+  description: "울산 주유소 가격을 말로 물으면 오피넷 데이터로 답하는 AI",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ko" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">
-        <header className="border-b border-foreground/15">
-          <nav className="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4">
-            <Link href="/" className="font-bold">
-              기름알리미
-            </Link>
-            <Link href="/kerosene" className="text-sm">
-              등유 안심
-            </Link>
-            <Link href="/chat" className="text-sm">
-              주유 챗봇
-            </Link>
-          </nav>
+    <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col">
+        <header className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 pt-5 pb-3 sm:px-6">
+          <Image src="/brand/yuilmui-mark.png" alt="팀 유일무이 로고" width={36} height={36} priority />
+          <span className="text-lg font-bold tracking-tight">기름알리미</span>
+          <span className="ml-auto rounded-full px-3 py-1.5 text-xs font-medium text-ink-soft shadow-inset-sm">
+            시연 지역 · 울산 울주군
+          </span>
         </header>
-        <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">{children}</main>
-        <footer className="border-t border-foreground/15 px-4 py-4 text-center text-xs text-foreground/60">
-          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 시제품
+        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-4 sm:px-6">{children}</main>
+        <footer className="px-4 pb-5 text-center text-xs text-ink-soft">
+          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 시제품 · 팀 유일무이
         </footer>
       </body>
     </html>
