@@ -10,7 +10,7 @@ Node.js가 필요합니다.
 npm install
 ```
 
-`.env.example`을 복사해 `.env.local`을 만들고 `OPINET_API_KEY`에 오피넷 인증키를 넣습니다.
+`.env.example`을 복사해 `.env.local`을 만들고 `OPINET_API_KEY`에 오피넷 인증키, `ANTHROPIC_API_KEY`에 Claude API 키를 넣습니다. Claude 키가 없어도 버튼 질문은 동작하고, 자유 질문만 쓸 수 없습니다.
 
 ```bash
 npm run dev
@@ -26,7 +26,9 @@ http://localhost:3000 에서 확인합니다.
 | 등유 안심 | 김형준, 목서환 | `src/app/kerosene/` |
 | 주유 챗봇 | 지현민, 배재원 | `src/app/chat/`, `src/components/ChatPanel.tsx` |
 | 고정 질문 API | 지현민 | `src/app/api/fixed-question/` |
-| 오피넷 API 프록시 | 지현민 | `src/app/api/opinet/[endpoint]/` |
+| 오피넷 API 프록시 | 지현민 | `src/app/api/opinet/[endpoint]/`, `src/lib/opinet.ts` |
+| 주유소 조회(울산 최저가, 상세·기준 시각) | 지현민 | `src/lib/stations.ts`, `src/app/api/stations/` |
+| 자유 질문 챗봇(Claude가 조회 기능을 골라 답함) | 지현민 | `src/lib/chatbot.ts`, `src/app/api/chat/` |
 
 ## 오피넷 호출
 
