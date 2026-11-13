@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import type { AlertProposal } from "@/lib/chatbot";
 import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
 import { addDays, type FillForecast } from "@/lib/fillForecast";
-import { KEROSENE_APP } from "@/lib/kerosene";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
 import { fuelName, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
@@ -41,7 +40,6 @@ const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시�
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
 const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
 const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
-const KEROSENE_LINK = { name: KEROSENE_APP.name, href: "/kerosene" };
 // 서버가 받는 대화 한도(20턴, 한 턴 500자)에 맞춘다.
 const MAX_HISTORY = 19;
 const MAX_TURN_LENGTH = 500;
@@ -534,13 +532,6 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
                 내 알림 조건 걸기
               </Link>
             </div>
-            <p className="mt-6 text-center text-sm text-ink-soft">
-              어르신 댁 등유 보일러가 걱정되면{" "}
-              <Link href="/kerosene" className="font-semibold text-ink underline underline-offset-4">
-                {KEROSENE_APP.name}
-              </Link>
-              에서 도와드려요.
-            </p>
           </div>
         )}
 
@@ -556,7 +547,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
             );
           }
           if ("cap" in message) {
-            return <CapCard key={index} cap={message.cap} kerosene={KEROSENE_LINK} busy={busy} onPastNotice={askFixed} />;
+            return <CapCard key={index} cap={message.cap} busy={busy} onPastNotice={askFixed} />;
           }
           if ("fillForm" in message) {
             return <FillLogCard key={index} busy={busy} onSubmit={submitForecast} />;
