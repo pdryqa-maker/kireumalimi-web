@@ -3,8 +3,18 @@
 // 간편 로그인: 부를 이름, 내 위치, 내 차를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AMOUNT_CHOICES, AMOUNT_LIMITS, amountShort, cleanWon, fullNote } from "@/lib/fillAmount";
+import {
+  CAR_DATA,
+  CAR_SIZES,
+  DRIVES,
+  fuelEconomy,
+  isKmpl,
+  sizeFullLiters,
+  type CarSize,
+  type MyCar,
+} from "@/lib/fuelEconomy";
 import { inKorea, toKatec } from "@/lib/katec";
 import { cleanText, fuelName, GUEST, LIMITS, PROFILE_FUELS, profileStore, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { LocateIcon } from "./icons";
@@ -24,6 +34,91 @@ async function loadAreas(sido = ""): Promise<Area[]> {
   const body = await response.json().catch(() => null);
   if (!response.ok || !Array.isArray(body?.areas)) throw new Error(body?.error ?? "지역 목록을 불러오지 못했어요.");
   return body.areas;
+}
+
+const koreanDate = (date: string) => {
+  const [year, month, day] = date.split("-").map(Number);
+  return `${year}년 ${month}월 ${day}일`;
+};
+const CHIP = "rounded-full px-4 py-2 text-sm font-semibold";
+const chipTone = (on: boolean) => (on ? "bg-accent text-on-accent" : "shadow-raised-sm");
+const CAR_SEARCH_FAILED = "차종을 찾지 못했어요. 잠시 뒤 다시 해 보거나 아래에서 차 크기를 골라 주세요.";
+
+// 차종 찾기: 칠 때마다(0.25초 쉬면) 받아 둔 공인 연비 표에서 찾는다.
+function CarSearch({ onPick }: { onPick: (car: MyCar) => void }) {
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState<{ query: string; cars: MyCar[]; error: string } | null>(null);
+  const q = query.trim();
+
+  useEffect(() => {
+    if (!q) return;
+    let alive = true;
+    const timer = setTimeout(async () => {
+      const response = await fetch(`/api/cars?${new URLSearchParams({ q })}`).catch(() => null);
+      const body = await response?.json().catch(() => null);
+      if (!alive) return;
+      setResult(
+        response?.ok && Array.isArray(body?.cars)
+          ? { query: q, cars: body.cars, error: "" }
+          : { query: q, cars: [], error: body?.error ?? CAR_SEARCH_FAILED },
+      );
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [q]);
+
+  const shown = q && result?.query === q ? result : null;
+  return (
+    <div className="mt-1.5">
+      <input
+        type="search"
+        enterKeyHint="search"
+        maxLength={30}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => event.key === "Enter" && event.preventDefault()}
+        placeholder="예: 아반떼, 쏘렌토 하이브리드"
+        aria-label="차종 찾기"
+        className={FIELD}
+      />
+      {q && !shown && (
+        <p role="status" className="mt-2 text-sm text-ink-soft">
+          찾는 중…
+        </p>
+      )}
+      {shown && shown.cars.length === 0 && (
+        <p role="status" className="mt-2 text-sm text-ink-soft">
+          {shown.error || `'${q}'에 맞는 차종이 없어요. 이름을 줄이거나 아래에서 차 크기를 골라 주세요.`}
+        </p>
+      )}
+      {shown && shown.cars.length > 0 && (
+        <>
+          <ul aria-label="찾은 차종" className="mt-2 max-h-72 overflow-y-auto rounded-2xl bg-canvas p-1.5">
+            {shown.cars.map((car) => (
+              <li key={car.id}>
+                <button
+                  type="button"
+                  onClick={() => onPick(car)}
+                  className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-ground focus-visible:outline-offset-0"
+                >
+                  <span className="block text-sm font-medium">{car.name}</span>
+                  <span className="mt-0.5 block text-xs text-ink-soft">
+                    {car.maker}, {car.year}년, {fuelName(car.fuel)}
+                    {car.hybrid ? " 하이브리드" : ""}, 복합 {car.combined}km/L
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-ink-soft">
+            {shown.cars.length}개를 최근 연식부터 보여 줘요. 연식(예: 2021)이나 배기량(예: 1.6)을 덧붙이면 좁혀져요.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
@@ -62,6 +157,31 @@ export default function LoginForm() {
     setError("");
   };
   const wasSignedIn = mounted && signedIn(saved);
+  const economy = fuelEconomy(form);
+  const manual = form.kmplSource === "manual";
+
+  // 유종을 바꾸면 다른 유종의 차종은 지우고 크기 평균(없으면 기본값)으로 셈한다.
+  function chooseFuel(fuel: string) {
+    const keepCar = !form.car || form.car.fuel === fuel;
+    edit(keepCar ? { fuel } : { fuel, car: null, kmplSource: form.size ? "size" : "default" });
+  }
+
+  // 차종을 고르면 유종도 그 차에 맞추고, 가득일 때의 기본 리터를 그 차 크기에 맞춘다.
+  function pickCar(car: MyCar) {
+    const size = car.size ?? form.size;
+    edit({
+      car,
+      fuel: car.fuel,
+      size,
+      hybrid: car.hybrid,
+      kmplSource: "car",
+      ...(car.size ? { fullLiters: sizeFullLiters(car.size) } : {}),
+    });
+  }
+
+  function pickSize(size: CarSize) {
+    edit({ size, kmplSource: "size", fullLiters: sizeFullLiters(size) });
+  }
 
   // 현재 위치로 찾기: 휴대폰 위치를 받고, 그 위치가 속한 시군구를 내 지역으로 함께 정한다.
   function locate() {
@@ -180,7 +300,7 @@ export default function LoginForm() {
       );
       return;
     }
-    if (!(form.kmpl >= LIMITS.minKmpl && form.kmpl <= LIMITS.maxKmpl)) {
+    if (manual && !isKmpl(form.kmpl)) {
       setError(`연비는 ${LIMITS.minKmpl}~${LIMITS.maxKmpl}km/L 사이로 넣어 주세요.`);
       return;
     }
@@ -325,10 +445,8 @@ export default function LoginForm() {
                 type="button"
                 role="radio"
                 aria-checked={form.fuel === fuel}
-                onClick={() => edit({ fuel })}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                  form.fuel === fuel ? "bg-accent text-on-accent" : "shadow-raised-sm"
-                }`}
+                onClick={() => chooseFuel(fuel)}
+                className={`${CHIP} ${chipTone(form.fuel === fuel)}`}
               >
                 {fuelName(fuel)}
               </button>
@@ -395,22 +513,130 @@ export default function LoginForm() {
               ? fullNote(fullTank)
               : "금액은 그날 전국 평균 판매가로 몇 리터인지 셈해요."}
           </p>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-sm text-ink-soft">연비(km/L)</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                min={LIMITS.minKmpl}
-                max={LIMITS.maxKmpl}
-                step={0.1}
-                required
-                value={form.kmpl}
-                onChange={(event) => edit({ kmpl: Number(event.target.value) })}
-                className={`${FIELD} mt-1.5 tabular-nums`}
-              />
-            </label>
+
+          <p className="mt-6 text-sm text-ink-soft">차종</p>
+          {mounted && form.car ? (
+            <div className="mt-1.5 flex items-start justify-between gap-3 rounded-2xl bg-canvas px-4 py-3.5">
+              <p className="text-sm">
+                <span className="font-semibold">{form.car.name}</span>
+                <span className="mt-0.5 block text-xs text-ink-soft">
+                  {form.car.maker}, {form.car.year}년, {fuelName(form.car.fuel)}
+                  {form.car.hybrid ? " 하이브리드" : ""}, 공인 도심 {form.car.urban}·고속도로 {form.car.highway}km/L
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => edit({ car: null, kmplSource: form.size ? "size" : "default" })}
+                className="shrink-0 text-sm text-ink-soft underline underline-offset-4"
+              >
+                바꾸기
+              </button>
+            </div>
+          ) : (
+            <>
+              <CarSearch onPick={pickCar} />
+              <p id="size-label" className="mt-4 text-sm text-ink-soft">
+                차종을 모르면 차 크기만 골라도 돼요
+              </p>
+              <div role="radiogroup" aria-labelledby="size-label" className="mt-1.5 flex flex-wrap gap-2">
+                {CAR_SIZES.map((size) => {
+                  const on = form.kmplSource === "size" && form.size === size.id;
+                  return (
+                    <button
+                      key={size.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-describedby="size-examples"
+                      onClick={() => pickSize(size.id)}
+                      className={`${CHIP} ${chipTone(on)}`}
+                    >
+                      {size.id}
+                    </button>
+                  );
+                })}
+              </div>
+              <label className="mt-2.5 flex w-fit items-center gap-2 text-sm">
+                <input type="checkbox" checked={form.hybrid} onChange={(event) => edit({ hybrid: event.target.checked })} className="size-4 accent-accent" />
+                하이브리드 차예요
+              </label>
+              <p id="size-examples" className="mt-1.5 text-xs leading-relaxed text-ink-soft">
+                {CAR_SIZES.find((size) => size.id === form.size)?.examples ?? "예: 경차 모닝·레이, 중형 쏘나타·K5, SUV·RV 투싼·카니발"}
+              </p>
+            </>
+          )}
+
+          {(form.kmplSource === "car" || form.kmplSource === "size") && (
+            <>
+              <p id="drive-label" className="mt-5 text-sm text-ink-soft">
+                주로 다니는 길
+              </p>
+              <div role="radiogroup" aria-labelledby="drive-label" className="mt-1.5 flex flex-wrap gap-2">
+                {DRIVES.map((drive) => (
+                  <button
+                    key={drive.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={form.drive === drive.id}
+                    onClick={() => edit({ drive: drive.id })}
+                    className={`${CHIP} ${chipTone(form.drive === drive.id)}`}
+                  >
+                    {drive.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="mt-5 rounded-2xl bg-canvas px-4 py-3.5">
+            {manual ? (
+              <label className="flex items-center gap-2">
+                <span className="text-sm font-semibold">연비</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={LIMITS.minKmpl}
+                  max={LIMITS.maxKmpl}
+                  step={0.1}
+                  required
+                  value={form.kmpl}
+                  onChange={(event) => edit({ kmpl: Number(event.target.value) })}
+                  aria-label="연비(km/L)"
+                  className={`${FIELD} max-w-[7rem] tabular-nums`}
+                />
+                <span className="text-sm text-ink-soft">km/L</span>
+              </label>
+            ) : (
+              <p className="text-sm">
+                <span className="font-semibold">연비</span>{" "}
+                <span className="text-lg font-bold tabular-nums">{economy.kmpl}km/L</span>
+              </p>
+            )}
+            <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+              {manual
+                ? "직접 넣은 연비로 셈해요."
+                : economy.source === "default"
+                  ? `지금은 기본값이에요. 차종이나 차 크기를 고르면 내 차에 맞춰 셈해요.`
+                  : `${economy.basis}이에요.`}
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                edit(
+                  manual
+                    ? { kmplSource: form.car ? "car" : form.size ? "size" : "default" }
+                    : { kmplSource: "manual", kmpl: economy.kmpl },
+                )
+              }
+              className="mt-2 text-sm text-ink-soft underline underline-offset-4"
+            >
+              {manual ? "차종·크기로 다시 셈하기" : "연비 직접 넣기"}
+            </button>
           </div>
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            공인 연비는 {CAR_DATA.source}에 {koreanDate(CAR_DATA.registeredOn)}까지 등록된 값이에요. 실제 연비는 운전 습관과 날씨에
+            따라 달라요.
+          </p>
         </Section>
 
         {error && (

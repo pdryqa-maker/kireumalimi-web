@@ -2,6 +2,20 @@
 // 서버는 질문을 받을 때 이 값을 다시 검사해서 쓴다. 정확한 좌표는 AI에 보내지 않고 조회에만 쓴다.
 import { browserStore } from "./browserStore";
 import { cleanAmount, DEFAULT_AMOUNT, DEFAULT_FULL_LITERS, isLiters, type Amount } from "./fillAmount";
+import {
+  cleanCar,
+  DEFAULT_DRIVE,
+  DEFAULT_KMPL,
+  fuelEconomy,
+  isCarSize,
+  isDrive,
+  isKmpl,
+  isKmplSource,
+  type CarSize,
+  type Drive,
+  type KmplSource,
+  type MyCar,
+} from "./fuelEconomy";
 
 export type MyPlace = { label: string; x: number; y: number }; // x·y는 오피넷 KATEC 좌표
 export type MyArea = { code: string; name: string }; // 오피넷 지역코드(시도 2자리, 시군구 4자리)
@@ -10,7 +24,12 @@ export type Profile = {
   fuel: string;
   amount: Amount; // 한 번에 넣는 양: 금액(원) 또는 가득
   fullLiters: number; // 가득일 때 기본 리터. 영수증이 2번 이상 쌓이면 영수증 값을 쓴다
-  kmpl: number; // 연비
+  car: MyCar | null; // 고른 차종(공인 연비)
+  size: CarSize | null; // 차종을 모를 때 고른 차 크기
+  hybrid: boolean; // 크기 평균을 하이브리드 차로 셈할지
+  drive: Drive; // 주로 다니는 길
+  kmplSource: KmplSource; // 연비를 어디서 얻었는지
+  kmpl: number; // 계산에 쓰는 연비. 차종·크기로 정하면 저장할 때마다 다시 셈한다
   location: MyPlace | null;
   area: MyArea | null;
 };
@@ -22,11 +41,16 @@ export const GUEST: Profile = {
   fuel: "휘발유",
   amount: DEFAULT_AMOUNT,
   fullLiters: DEFAULT_FULL_LITERS,
-  kmpl: 12,
+  car: null,
+  size: null,
+  hybrid: false,
+  drive: DEFAULT_DRIVE,
+  kmplSource: "default",
+  kmpl: DEFAULT_KMPL,
   location: null,
   area: null,
 };
-export const LIMITS = { name: 12, label: 12, areaName: 30, minKmpl: 3, maxKmpl: 30 };
+export const LIMITS = { name: 12, label: 12, areaName: 30, minKmpl: 3, maxKmpl: 30 }; // 연비 범위는 fuelEconomy.ts와 같다
 
 // 우리나라를 넉넉히 감싸는 KATEC 범위(제주 남단 ~ 독도). 이 밖이면 오피넷에 물을 수 없다.
 export const KATEC_BOUNDS = { minX: 50_000, maxX: 760_000, minY: 0, maxY: 700_000 };
@@ -69,17 +93,30 @@ function cleanArea(value: unknown): MyArea | null {
 }
 
 // 예전에는 한 번에 넣는 양을 리터(liters)로 받았다. 그 값은 가득일 때의 리터로 옮겨 계산 결과가 바뀌지 않게 한다.
+// 연비 근거(kmplSource)가 없던 예전 프로필은 12가 아니면 직접 넣은 연비로 본다.
 export function cleanProfile(value: unknown): Profile {
   const item = (value ?? {}) as Partial<Profile> & { liters?: unknown };
   const legacyLiters = Number(item.liters);
   const fullLiters = Number(item.fullLiters);
   const kmpl = Number(item.kmpl);
+  const fuel = PROFILE_FUELS.includes(item.fuel as string) ? (item.fuel as string) : GUEST.fuel;
+  const car = cleanCar(item.car, PROFILE_FUELS);
+  const size = isCarSize(item.size) ? item.size : (car?.size ?? null);
+  const hybrid = item.hybrid === true;
+  const drive = isDrive(item.drive) ? item.drive : DEFAULT_DRIVE;
+  const kmplSource = isKmplSource(item.kmplSource) ? item.kmplSource : isKmpl(kmpl) && kmpl !== DEFAULT_KMPL ? "manual" : "default";
+  const economy = fuelEconomy({ fuel, car, size, hybrid, drive, kmplSource, kmpl });
   return {
     name: cleanText(item.name, LIMITS.name),
-    fuel: PROFILE_FUELS.includes(item.fuel as string) ? (item.fuel as string) : GUEST.fuel,
+    fuel,
     amount: cleanAmount(item.amount) ?? (isLiters(legacyLiters) ? "full" : GUEST.amount),
     fullLiters: isLiters(fullLiters) ? fullLiters : isLiters(legacyLiters) ? legacyLiters : GUEST.fullLiters,
-    kmpl: Number.isFinite(kmpl) && kmpl >= LIMITS.minKmpl && kmpl <= LIMITS.maxKmpl ? Math.round(kmpl * 10) / 10 : GUEST.kmpl,
+    car: car?.fuel === fuel ? car : null, // 유종을 바꾸면 그 유종이 아닌 차종은 지운다
+    size,
+    hybrid,
+    drive,
+    kmplSource: economy.source,
+    kmpl: economy.kmpl,
     location: cleanPlace(item.location),
     area: cleanArea(item.area),
   };

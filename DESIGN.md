@@ -82,6 +82,7 @@ One orchestrated moment: the orb breathes slowly (5.5s). Answers rise 4px and fa
 
 - Do put the price first and pair it with its 기준 시각 and the 오피넷-versus-pump note.
 - Do keep the user's own data visible where it changes an answer (내 위치, 내 차) and link it to 내 정보.
+- Do say where a fuel-economy figure comes from, right next to it: "아반떼 공인 연비, 반반 기준", "중형 휘발유 차 평균", "직접 넣은 연비". Official figures read high against real driving; say so once, and never invent a correction factor.
 - Do say fill amounts the way people order at the pump: "5만원어치(약 27L)", "가득(약 40L)". Show liters only in parentheses, as the converted value, and say what price or receipts the conversion used.
 - Do say plainly when something is only a preview (Kakao messages are not sent).
 - Don't use the flame for paragraphs, borders around text, or warnings.

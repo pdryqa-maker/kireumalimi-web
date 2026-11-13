@@ -6,6 +6,7 @@ import { priceStory } from "@/lib/briefing";
 import { amountName, cleanWon, fullLiters, isLiters, litersFill, type Fill } from "@/lib/fillAmount";
 import { forecastNextFill, MAX_RECORDS, todayKst, weekday } from "@/lib/fillForecast";
 import { AMOUNT_ERROR, resolveFill } from "@/lib/fillPrice";
+import { fuelEconomy } from "@/lib/fuelEconomy";
 import { fuelReport } from "@/lib/fuelReport";
 import { KEROSENE_APP } from "@/lib/kerosene";
 import type { LedgerEntry } from "@/lib/ledger";
@@ -49,6 +50,7 @@ function profileBlock(profile: Profile, ledger: LedgerEntry[]) {
   const lines = [
     `- 부를 이름: ${profile.name}. 답의 첫머리에서 '${profile.name}님'으로 한 번 부릅니다.`,
     `- 내 차: ${fuelName(profile.fuel)}(${profile.fuel}), 한 번에 ${myAmount(profile, ledger)}, 연비 ${profile.kmpl}km/L. 이용자가 따로 말하지 않으면 이 유종·주유량·연비로 조회합니다(주유량은 fill에 '내 차 설정').`,
+    `- 연비 근거: ${fuelEconomy(profile).basis}. 연비가 답에 들어가면 이 근거를 짧게 밝힙니다(예: '아반떼 공인 연비 기준', '중형차 평균 기준'). 기본값이면 내 정보에서 차종이나 차 크기를 고르면 더 정확해진다고 한 번만 알려도 됩니다.`,
   ];
   if (profile.location) {
     lines.push(
@@ -589,8 +591,8 @@ export async function answer(
   // 대화에 이미 나온 숫자(이용자가 말한 주유량, 앞선 카드의 가격)와 이번 도구 결과의 숫자가 답변의 근거다.
   const today = todayKst();
   // 오늘 날짜도 근거로 둔다(예: '오늘 11월 13일 기준').
-  // 이용자 정보의 주유량·연비·지역코드도 답에 옮겨 쓸 수 있는 근거다.
-  const facts = `${myAmount(profile, ledger)} ${profile.kmpl} ${profile.area?.code ?? ""} ${profile.location?.label ?? ""} ${ledger.length} ${ledger.at(-1)?.date ?? ""}`;
+  // 이용자 정보의 주유량·연비(근거의 공인 연비 포함)·지역코드도 답에 옮겨 쓸 수 있는 근거다.
+  const facts = `${myAmount(profile, ledger)} ${profile.kmpl} ${fuelEconomy(profile).basis} ${profile.area?.code ?? ""} ${profile.location?.label ?? ""} ${ledger.length} ${ledger.at(-1)?.date ?? ""}`;
   const allowed = collectAllowed([today, facts, ...history.map((turn) => turn.content)]);
   const proposals: Proposals = { alerts: [], fills: [] };
   let retried = false;
