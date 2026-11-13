@@ -39,8 +39,10 @@ export const amountShort = (amount: Amount) => (amount === "full" ? "가득" : w
 export type FullLiters = { liters: number; from: "receipts" | "default"; fills: number };
 
 // 가득일 때의 리터. 리터를 아는 주유가 2번 이상이면 최근 5번의 가운데값, 아니면 기본값.
-export function fullLiters(fills: { liters: number | null }[], fallback = DEFAULT_FULL_LITERS): FullLiters {
-  const known = fills
+// '가득 넣었어요'로 표시한 주유가 2번 이상이면 그 주유만 본다.
+export function fullLiters(fills: { liters: number | null; full?: boolean }[], fallback = DEFAULT_FULL_LITERS): FullLiters {
+  const marked = fills.filter((fill) => fill.full && typeof fill.liters === "number" && fill.liters > 0);
+  const known = (marked.length >= MIN_KNOWN_FILLS ? marked : fills)
     .map((fill) => fill.liters)
     .filter((liters): liters is number => typeof liters === "number" && liters > 0)
     .slice(-RECENT_FILLS);

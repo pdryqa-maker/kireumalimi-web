@@ -30,8 +30,16 @@ export function mergeLedger(ledger: LedgerEntry[], fills: FillRecord[]): LedgerE
       pricePerLiter: null,
       totalWon: record.won ?? null,
       stationName: null,
+      full: false,
+      odometerKm: null,
     }));
   return cleanLedger([...ledger, ...older]);
+}
+
+// 그날 주유 기록에 가득 표시와 누적 주행거리를 붙인다(계기판 사진). 그날 기록이 없으면 false.
+export function markFill(date: string, mark: { full: boolean; odometerKm: number | null }) {
+  const entry = mergeLedger(parseLedger(ledgerStore.read()), parseFills(fillStore.read())).find((item) => item.date === date);
+  return entry ? addLedgerEntry({ ...entry, ...mark }) : false;
 }
 
 // 리포트와 점검에 보낼 장부

@@ -1,6 +1,11 @@
+"use client";
+
 // 실질비용, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
-import type { AlertProposal, FillProposal } from "@/lib/chatbot";
+import Link from "next/link";
+import { useState } from "react";
+import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
 import type { Fill } from "@/lib/fillAmount";
+import { MAX_ODOMETER_KM } from "@/lib/ledger";
 import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
 import type { findByTotalCost } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
@@ -22,6 +27,20 @@ export type AlertCheck = AlertProposal & { fetchedAt: string; matches: PriceRow[
 
 const CARD = "max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised";
 const TAG = "rounded-full px-2.5 py-1 text-xs font-medium text-ink-soft tabular-nums shadow-inset-sm";
+const FIELD =
+  "min-w-0 rounded-full bg-transparent px-3.5 py-2 text-[15px] tabular-nums shadow-inset-sm focus-visible:outline-offset-1";
+const PRIMARY =
+  "rounded-full bg-accent px-4 py-2 text-sm font-semibold text-on-accent shadow-raised-sm disabled:opacity-50";
+const SECONDARY = "rounded-full px-4 py-2 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm disabled:opacity-50";
+
+export type FillMark = { full: boolean; odometerKm: number | null };
+
+// 누적 주행거리 입력값. 비었으면 null, 맞지 않으면 undefined.
+function odometerFrom(text: string): number | null | undefined {
+  if (text.trim() === "") return null;
+  const km = Number(text);
+  return Number.isInteger(km) && km > 0 && km <= MAX_ODOMETER_KM ? km : undefined;
+}
 const ROW =
   "-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-2xl px-2 py-3 text-left transition-shadow hover:shadow-inset-sm active:shadow-inset disabled:cursor-default disabled:hover:shadow-none";
 
@@ -327,20 +346,35 @@ const FILL_STATUS_TEXT: Record<Exclude<AlertStatus, "proposed">, string> = {
   dismissed: "기록에 넣지 않았어요",
 };
 
-// 영수증 사진에서 읽은 주유 기록. 이용자가 확인하고 넣는다.
+// 영수증 사진에서 읽은 주유 기록. 이용자가 확인하고 넣는다. 가득 넣었는지와 계기판 누적 주행거리를 함께 받아
+// 가득→가득 실측 연비를 셈한다. 같은 날 계기판 사진을 먼저 올렸으면 그 주행거리를 채워 둔다.
 export function FillProposalCard({
   fill,
   status,
+  odometerHint,
   onSave,
   onDismiss,
   busy,
 }: {
   fill: FillProposal;
   status: AlertStatus;
-  onSave: () => void;
+  odometerHint: number | null;
+  onSave: (mark: FillMark) => void;
   onDismiss: () => void;
   busy: boolean;
 }) {
+  const [full, setFull] = useState(false);
+  const [odometer, setOdometer] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const odometerText = odometer ?? (odometerHint ? String(odometerHint) : "");
+  function save() {
+    const odometerKm = odometerFrom(odometerText);
+    if (odometerKm === undefined) {
+      setError(`누적 주행거리는 1~${won(MAX_ODOMETER_KM)}km 사이 정수로 넣거나 비워 두세요.`);
+      return;
+    }
+    onSave({ full, odometerKm });
+  }
   const rounded = fill.litersOnReceipt !== fill.liters;
   const rows: [string, string][] = [
     ["주유한 날", longDate(fill.date)],
@@ -361,29 +395,157 @@ export function FillProposalCard({
         ))}
       </dl>
       {status === "proposed" ? (
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={busy}
-            className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-on-accent shadow-raised-sm disabled:opacity-50"
-          >
-            주유 기록에 넣기
-          </button>
-          <button
-            type="button"
-            onClick={onDismiss}
-            disabled={busy}
-            className="rounded-full px-4 py-2 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm disabled:opacity-50"
-          >
-            넣지 않기
-          </button>
-        </div>
+        <>
+          <div className="mt-3 space-y-2.5">
+            <label className="flex w-fit items-center gap-2 text-sm">
+              <input type="checkbox" checked={full} onChange={(event) => setFull(event.target.checked)} className="size-4 accent-accent" />
+              가득 넣었어요
+            </label>
+            <label className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-ink-soft">계기판 누적 주행거리</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={MAX_ODOMETER_KM}
+                step={1}
+                value={odometerText}
+                onChange={(event) => {
+                  setOdometer(event.target.value);
+                  setError("");
+                }}
+                placeholder="모르면 비워 두세요"
+                className={`${FIELD} w-40`}
+              />
+              <span className="text-ink-soft">km</span>
+            </label>
+            <p className="text-xs leading-relaxed text-ink-soft">
+              가득 넣을 때마다 주행거리를 남기면 두 번째부터 실제 연비(달린 거리 ÷ 넣은 양)를 셈해요.
+              {odometerHint && odometer === null ? " 오늘 계기판 사진의 주행거리를 채워 뒀어요." : ""}
+            </p>
+            {error && (
+              <p role="alert" className="text-sm font-medium">
+                {error}
+              </p>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button type="button" onClick={save} disabled={busy} className={PRIMARY}>
+              주유 기록에 넣기
+            </button>
+            <button type="button" onClick={onDismiss} disabled={busy} className={SECONDARY}>
+              넣지 않기
+            </button>
+          </div>
+        </>
       ) : (
         <p className={`mt-4 w-fit ${TAG}`}>{FILL_STATUS_TEXT[status]}</p>
       )}
       <p className="mt-3 text-xs text-ink-soft">
         값이 다르면 넣지 말고 다시 찍어 주세요. 사진은 저장하지 않고, 기록은 이 브라우저에만 최근 5번까지 남겨요.
+      </p>
+    </div>
+  );
+}
+
+const KMPL_STATUS_TEXT: Record<Exclude<AlertStatus, "proposed">, string> = {
+  saved: "내 연비를 바꿨어요",
+  unsaved: "이 브라우저에 저장하지 못했어요",
+  dismissed: "내 연비를 바꾸지 않았어요",
+};
+const ODOMETER_STATUS_TEXT: Record<Exclude<AlertStatus, "proposed">, string> = {
+  saved: "오늘 주유 기록에 넣었어요",
+  unsaved: "이 브라우저에 저장하지 못했어요",
+  dismissed: "주유 기록에 넣지 않았어요",
+};
+
+// 계기판 사진에서 읽은 누적 주행거리와 평균 연비. 평균 연비는 내 연비로 쓸 수 있고(로그인했을 때),
+// 주행거리는 그날 주유 기록에 붙여 가득→가득 실측 연비에 쓴다. 그날 기록이 없으면 영수증 카드에 채워 준다.
+export function DashboardCard({
+  dashboard,
+  kmplStatus,
+  odometerStatus,
+  current,
+  signedIn,
+  hasFill,
+  onUseKmpl,
+  onSaveOdometer,
+  busy,
+}: {
+  dashboard: DashboardProposal;
+  kmplStatus: AlertStatus;
+  odometerStatus: AlertStatus;
+  current: { kmpl: number; basis: string };
+  signedIn: boolean;
+  hasFill: boolean;
+  onUseKmpl: () => void;
+  onSaveOdometer: (full: boolean) => void;
+  busy: boolean;
+}) {
+  const [full, setFull] = useState(false);
+  const rows: [string, string][] = [
+    ...(dashboard.odometerKm ? ([["누적 주행거리", `${won(dashboard.odometerKm)}km`]] as [string, string][]) : []),
+    ...(dashboard.averageKmpl ? ([["평균 연비", `${dashboard.averageKmpl}km/L`]] as [string, string][]) : []),
+  ];
+  return (
+    <div className={CARD}>
+      <CardHead title="계기판에서 읽은 값" />
+      <dl className="mt-3 divide-y divide-hairline">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-baseline justify-between gap-4 py-2.5">
+            <dt className="text-sm text-ink-soft">{label}</dt>
+            <dd className="text-right font-semibold tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {dashboard.averageKmpl !== null && (
+        <div className="mt-4">
+          <p className="text-sm leading-relaxed">
+            지금 내 연비는 <span className="font-semibold tabular-nums">{current.kmpl}km/L</span>예요
+            <span className="text-ink-soft">({current.basis})</span>.
+          </p>
+          {!signedIn ? (
+            <p className="mt-2 text-sm text-ink-soft">
+              <Link href="/login" className="underline underline-offset-4">
+                로그인
+              </Link>
+              하면 이 평균 연비를 내 연비로 쓸 수 있어요.
+            </p>
+          ) : kmplStatus === "proposed" ? (
+            <button type="button" onClick={onUseKmpl} disabled={busy} className={`mt-2.5 ${PRIMARY}`}>
+              평균 연비 {dashboard.averageKmpl}km/L를 내 연비로 쓰기
+            </button>
+          ) : (
+            <p className={`mt-2.5 w-fit ${TAG}`}>{KMPL_STATUS_TEXT[kmplStatus]}</p>
+          )}
+        </div>
+      )}
+
+      {dashboard.odometerKm !== null && (
+        <div className="mt-4">
+          {odometerStatus !== "proposed" ? (
+            <p className={`w-fit ${TAG}`}>{ODOMETER_STATUS_TEXT[odometerStatus]}</p>
+          ) : hasFill ? (
+            <>
+              <label className="flex w-fit items-center gap-2 text-sm">
+                <input type="checkbox" checked={full} onChange={(event) => setFull(event.target.checked)} className="size-4 accent-accent" />
+                오늘 가득 넣었어요
+              </label>
+              <button type="button" onClick={() => onSaveOdometer(full)} disabled={busy} className={`mt-2.5 ${SECONDARY}`}>
+                주행거리를 오늘 주유 기록에 넣기
+              </button>
+            </>
+          ) : (
+            <p className="text-sm leading-relaxed text-ink-soft">
+              오늘 주유 기록이 아직 없어요. 영수증 사진을 올리면 영수증 카드에 이 주행거리를 채워 둘게요.
+            </p>
+          )}
+        </div>
+      )}
+
+      <p className="mt-4 text-xs leading-relaxed text-ink-soft">
+        평균 연비는 계기판을 마지막으로 초기화한 뒤의 평균이에요. 값이 다르면 쓰지 말고 다시 찍어 주세요. 사진은 저장하지 않아요.
       </p>
     </div>
   );
