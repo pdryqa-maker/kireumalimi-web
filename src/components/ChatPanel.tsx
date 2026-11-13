@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { AlertProposal, FillProposal } from "@/lib/chatbot";
+import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
 import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
 import type { FuelReport } from "@/lib/fuelReport";
 import { AMOUNT_CHOICES, amountName, amountQuery, amountShort, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
+import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
-import { fuelName, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
+import { fuelName, PROFILE_FUELS, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
-import { addLedgerEntry, ledgerForServer, ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
+import { addLedgerEntry, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger } from "@/lib/savedLedger";
 import { parseWatch, watchStore } from "@/lib/watchSettings";
 import {
   AlertCard,
@@ -20,6 +21,7 @@ import {
   CapCard,
   capMessage,
   CostCard,
+  DashboardCard,
   FillProposalCard,
   fuelLabel,
   TaxCard,
@@ -28,6 +30,7 @@ import {
   type CapNotice,
   type CostResult,
   type CostStation,
+  type FillMark,
   type PriceRow,
   type TaxImpact,
 } from "./AnswerCards";
@@ -45,13 +48,15 @@ const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
 const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
 const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
 const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
+const DASHBOARD_QUESTION = "계기판 사진으로 내 연비 맞춰 줘";
+const PHOTO_QUESTION = "이 사진으로 주유 기록이나 연비 남겨 줘";
 const EXPLAIN_QUESTION = "요즘 기름값 왜 이래?";
 const REPORT_QUESTION = "이번 달 주유 리포트 보여 줘";
 const UREA_QUESTION = "요소수 재고 있는 주유소 알려 줘";
 const LAST_MONTH_QUESTION = "지난달 주유 리포트 보여 줘";
 const STANDING_QUESTION = "내 단골 주유소, 아직 동네에서 싼 편이야?";
 const SAVED_QUESTION = "이번 달 기름값, 평균보다 얼마나 아꼈어?";
-// 영수증 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
+// 영수증·계기판 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
 const PHOTO_MAX_SIDE = 1600;
 const PHOTO_MAX_CHARS = 2_800_000;
 const PHOTO_INPUT_ID = "receipt-photo";
@@ -98,6 +103,14 @@ type Reply =
   | { from: "bot"; summary: string; alert: AlertProposal; status: AlertStatus; id: number }
   | { from: "bot"; summary: string; alertCheck: AlertCheck }
   | { from: "bot"; summary: string; fill: FillProposal; status: AlertStatus; id: number }
+  | {
+      from: "bot";
+      summary: string;
+      dashboard: DashboardProposal;
+      kmplStatus: AlertStatus;
+      odometerStatus: AlertStatus;
+      id: number;
+    }
   | { from: "bot"; summary: string; cap: CapNotice }
   | { from: "bot"; summary: string; fillForm: true }
   | { from: "bot"; summary: string; forecast: FillForecast; forecastCost: CostResult | null }
@@ -136,6 +149,11 @@ async function shrinkPhoto(file: File): Promise<Photo | null> {
 
 const fillSummary = (fill: FillProposal, status: AlertStatus) =>
   `영수증에서 읽은 주유 기록: ${fill.date} ${fill.litersOnReceipt}L(${{ proposed: "넣기 전", saved: "기록에 넣음", unsaved: "저장 못 함", dismissed: "넣지 않음" }[status]})`;
+
+const STATUS_WORD = { proposed: "확인 전", saved: "반영함", unsaved: "저장 못 함", dismissed: "반영 안 함" };
+const dashboardSummary = (dashboard: DashboardProposal, kmplStatus: AlertStatus, odometerStatus: AlertStatus) =>
+  `계기판에서 읽은 값:${dashboard.odometerKm ? ` 누적 주행거리 ${dashboard.odometerKm}km(${STATUS_WORD[odometerStatus]})` : ""}` +
+  `${dashboard.averageKmpl ? ` 평균 연비 ${dashboard.averageKmpl}km/L(${STATUS_WORD[kmplStatus]})` : ""}`;
 
 async function getJson(url: string, init?: RequestInit) {
   try {
@@ -346,6 +364,12 @@ export default function ChatPanel({
   const [pending, setPending] = useState<SkeletonKind | null>(null);
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  // 사진 고르기를 연 질문(영수증·계기판). 입력창 버튼이면 null. 사진을 고르기 전에 화면이 다시 그려지므로 상태로 둔다.
+  const [photoQuestion, setPhotoQuestion] = useState<string | null>(null);
+  const pickPhotoFor = (question: string | null) => {
+    setPhotoQuestion(question);
+    pickPhoto();
+  };
   useStored(alertStore, parseAlerts);
   useStored(watchStore, parseWatch);
   const fills = useStored(fillStore, parseFills);
@@ -585,6 +609,16 @@ export default function ChatPanel({
       if (body.fill) {
         replies.push({ from: "bot", fill: body.fill, status: "proposed", id: alertSeq++, summary: fillSummary(body.fill, "proposed") });
       }
+      if (body.dashboard) {
+        replies.push({
+          from: "bot",
+          dashboard: body.dashboard,
+          kmplStatus: "proposed",
+          odometerStatus: "proposed",
+          id: alertSeq++,
+          summary: dashboardSummary(body.dashboard, "proposed", "proposed"),
+        });
+      }
       return replies;
     }, photo?.preview);
   }
@@ -592,13 +626,14 @@ export default function ChatPanel({
   async function sendPhoto(file: File | undefined) {
     if (!file || pending) return;
     const photo = await shrinkPhoto(file);
-    const question = draft.trim() || RECEIPT_QUESTION;
+    const question = draft.trim() || photoQuestion || PHOTO_QUESTION;
+    setPhotoQuestion(null);
     setDraft("");
     if (!photo) {
       setMessages((current) => [
         ...current,
         { from: "user", text: question },
-        { from: "bot", text: "사진을 읽지 못했어요. 영수증을 JPG나 PNG 사진으로 다시 골라 주세요." },
+        { from: "bot", text: "사진을 읽지 못했어요. 영수증이나 계기판을 JPG나 PNG 사진으로 다시 골라 주세요." },
       ]);
       return;
     }
@@ -614,7 +649,7 @@ export default function ChatPanel({
   }
 
   // 영수증 기록을 주유 기록에 더한다. 같은 날 기록은 바꾸고, 최근 5번만 남긴다. 두 번 이상이면 다음 주유일을 바로 셈한다.
-  function saveFill(id: number, fill: FillProposal) {
+  function saveFill(id: number, fill: FillProposal, mark: FillMark) {
     const records = [...parseFills(fillStore.read()).filter((record) => record.date !== fill.date), { date: fill.date, liters: fill.liters }]
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-MAX_RECORDS);
@@ -625,10 +660,12 @@ export default function ChatPanel({
       pricePerLiter: fill.pricePerLiter,
       totalWon: fill.totalWon,
       stationName: fill.stationName,
+      ...mark,
     });
     const stored = saveFills(records);
     setFillStatus(id, stored ? "saved" : "unsaved");
     if (!stored) return;
+    applyMeasured();
     if (records.length < MIN_RECORDS) {
       setMessages((current) => [
         ...current,
@@ -642,6 +679,47 @@ export default function ChatPanel({
       const reason = problem instanceof Error ? problem.message : "";
       setMessages((current) => [...current, { from: "bot", text: `기록은 넣었지만 다음 주유일은 셈하지 못했어요. ${reason}` }]);
     }
+  }
+
+  function setDashboardStatus(id: number, next: { kmplStatus?: AlertStatus; odometerStatus?: AlertStatus }) {
+    setMessages((current) =>
+      current.map((message) => {
+        if (!("dashboard" in message) || message.id !== id) return message;
+        const updated = { ...message, ...next };
+        return { ...updated, summary: dashboardSummary(updated.dashboard, updated.kmplStatus, updated.odometerStatus) };
+      }),
+    );
+  }
+
+  // 계기판 평균 연비를 내 연비로 쓴다(이용자가 눌렀을 때만).
+  function applyDashboardKmpl(id: number, dashboard: DashboardProposal) {
+    if (!dashboard.averageKmpl) return;
+    const reading = { kind: "dashboard" as const, kmpl: dashboard.averageKmpl, date: dashboard.date, from: null, km: null, liters: null };
+    const stored = saveProfile({ ...profile, reading, kmplSource: "dashboard" });
+    setDashboardStatus(id, { kmplStatus: stored ? "saved" : "unsaved" });
+  }
+
+  // 계기판 주행거리를 그날 주유 기록에 붙인다.
+  function saveOdometer(id: number, dashboard: DashboardProposal, full: boolean) {
+    const stored = markFill(dashboard.date, { full, odometerKm: dashboard.odometerKm });
+    setDashboardStatus(id, { odometerStatus: stored ? "saved" : "unsaved" });
+    if (stored) applyMeasured();
+  }
+
+  // 가득→가득 실측 연비가 새로 나오면 내 연비로 쓴다. 직접 넣은 연비는 이용자가 고른 것이라 바꾸지 않고 알려만 준다.
+  function applyMeasured() {
+    const reading = measuredKmpl(ledgerForServer());
+    const known = profile.reading;
+    if (!reading || !loggedIn) return;
+    if (known?.kind === "measured" && known.date === reading.date && known.from === reading.from && known.kmpl === reading.kmpl) return;
+    const manual = profile.kmplSource === "manual";
+    const stored = saveProfile({ ...profile, reading, kmplSource: manual ? "manual" : "measured" });
+    const text = !stored
+      ? `${readingBasis(reading)}는 ${reading.kmpl}km/L인데, 이 브라우저에 저장하지 못했어요.`
+      : manual
+        ? `${readingBasis(reading)}는 ${reading.kmpl}km/L예요. 직접 넣은 연비를 쓰고 있어 바꾸지 않았어요. 내 정보에서 바꿀 수 있어요.`
+        : `${readingBasis(reading)}가 ${reading.kmpl}km/L로 나왔어요. 이제 이 연비로 거리 비용과 주행거리를 셈해요.`;
+    setMessages((current) => [...current, { from: "bot", text }]);
   }
 
   function submit(event: React.FormEvent) {
@@ -685,18 +763,30 @@ export default function ChatPanel({
     },
     records: {
       cards: [
-        { label: RECEIPT_QUESTION, onClick: pickPhoto, Icon: CameraIcon },
+        { label: RECEIPT_QUESTION, onClick: () => pickPhotoFor(RECEIPT_QUESTION), Icon: CameraIcon },
         { label: REPORT_QUESTION, onClick: () => askReport(), Icon: ChartIcon },
         { label: FORECAST_QUESTION, onClick: askForecast, Icon: CalendarIcon },
         { label: LAST_MONTH_QUESTION, onClick: () => askReport(lastMonth(kstClock().today)), Icon: ReceiptIcon },
       ],
-      chips: [{ label: SAVED_QUESTION, onClick: () => askFree(SAVED_QUESTION) }],
+      chips: [
+        { label: DASHBOARD_QUESTION, onClick: () => pickPhotoFor(DASHBOARD_QUESTION) },
+        { label: SAVED_QUESTION, onClick: () => askFree(SAVED_QUESTION) },
+      ],
     },
   };
   const { cards, chips } = starters[section];
   const suggestions = [...cards, ...chips];
   // 내 기록 탭 첫 줄: 장부와 주유 기록을 합친 횟수와 가장 최근 날짜
-  const records = section === "records" ? mergeLedger(ledger, fills) : [];
+  const knownFills = mergeLedger(ledger, fills);
+  const records = section === "records" ? knownFills : [];
+  const economy = fuelEconomy(profile);
+  // 같은 날 계기판 사진에서 읽은 누적 주행거리(영수증 카드에 채워 준다)
+  const odometerOn = (date: string) => {
+    for (const message of [...messages].reverse()) {
+      if ("dashboard" in message && message.dashboard.date === date && message.dashboard.odometerKm) return message.dashboard.odometerKm;
+    }
+    return null;
+  };
   const today = mounted ? kstClock().today : "";
   const briefing = useBriefing(fuel, homeArea.code, mounted);
   const headline = mounted ? (newsHeadline(today, fuel, briefing?.data ?? null) ?? greeting(kstClock().hour)) : "안녕하세요";
@@ -760,7 +850,7 @@ export default function ChatPanel({
               <div key={index} className="ml-auto flex w-fit max-w-[85%] animate-rise flex-col items-end gap-2">
                 {message.photo && (
                   // eslint-disable-next-line @next/next/no-img-element -- 이 브라우저에서 줄인 사진(data URL)이라 next/image가 필요 없다
-                  <img src={message.photo} alt="보낸 영수증 사진" className="max-h-48 w-auto rounded-2xl rounded-br-md object-contain shadow-raised-sm" />
+                  <img src={message.photo} alt="보낸 사진" className="max-h-48 w-auto rounded-2xl rounded-br-md object-contain shadow-raised-sm" />
                 )}
                 <p className="rounded-2xl rounded-br-md bg-canvas px-4 py-2.5 text-[15px]">{message.text}</p>
               </div>
@@ -773,7 +863,7 @@ export default function ChatPanel({
             return <FillLogCard key={index} busy={busy} onSubmit={submitForecast} />;
           }
           if ("report" in message) {
-            return <ReportCard key={index} report={message.report} onReceipt={pickPhoto} />;
+            return <ReportCard key={index} report={message.report} onReceipt={() => pickPhotoFor(RECEIPT_QUESTION)} />;
           }
           if ("forecast" in message) {
             return <ForecastCard key={index} forecast={message.forecast} cost={message.forecastCost} />;
@@ -787,14 +877,31 @@ export default function ChatPanel({
           if ("alertCheck" in message) {
             return <AlertCheckCard key={index} check={message.alertCheck} />;
           }
+          if ("dashboard" in message) {
+            return (
+              <DashboardCard
+                key={index}
+                dashboard={message.dashboard}
+                kmplStatus={message.kmplStatus}
+                odometerStatus={message.odometerStatus}
+                current={economy}
+                signedIn={loggedIn}
+                hasFill={knownFills.some((entry) => entry.date === message.dashboard.date)}
+                busy={busy}
+                onUseKmpl={() => applyDashboardKmpl(message.id, message.dashboard)}
+                onSaveOdometer={(full) => saveOdometer(message.id, message.dashboard, full)}
+              />
+            );
+          }
           if ("fill" in message) {
             return (
               <FillProposalCard
                 key={index}
                 fill={message.fill}
                 status={message.status}
+                odometerHint={odometerOn(message.fill.date)}
                 busy={busy}
-                onSave={() => saveFill(message.id, message.fill)}
+                onSave={(mark) => saveFill(message.id, message.fill, mark)}
                 onDismiss={() => setFillStatus(message.id, "dismissed")}
               />
             );
@@ -1027,10 +1134,10 @@ export default function ChatPanel({
           />
           <button
             type="button"
-            onClick={pickPhoto}
+            onClick={() => pickPhotoFor(null)}
             disabled={busy}
-            aria-label="영수증 사진 보내기"
-            title="영수증 사진으로 주유 기록 남기기"
+            aria-label="사진 보내기(영수증·계기판)"
+            title="영수증이나 계기판 사진으로 주유 기록·연비 남기기"
             className="grid size-11 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-canvas disabled:opacity-50"
           >
             <CameraIcon className="size-5" />

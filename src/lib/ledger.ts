@@ -8,9 +8,12 @@ export type LedgerEntry = {
   pricePerLiter: number | null; // 리터당 단가(원)
   totalWon: number | null; // 결제 금액(원)
   stationName: string | null;
+  full: boolean; // 가득 넣었는지. 가득→가득 사이로 실측 연비를 셈한다
+  odometerKm: number | null; // 그때 계기판의 누적 주행거리(km)
 };
 
 export const MAX_LEDGER = 30;
+export const MAX_ODOMETER_KM = 2_000_000;
 
 const positiveInt = (value: unknown, max: number) =>
   Number.isInteger(value) && Number(value) > 0 && Number(value) <= max ? Number(value) : null;
@@ -40,6 +43,8 @@ export function cleanEntry(value: unknown): LedgerEntry | null {
     pricePerLiter: positiveInt(item.pricePerLiter, 5000),
     totalWon,
     stationName: cleanName(item.stationName),
+    full: item.full === true,
+    odometerKm: positiveInt(item.odometerKm, MAX_ODOMETER_KM),
   };
 }
 

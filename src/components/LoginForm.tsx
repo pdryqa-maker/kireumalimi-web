@@ -2,6 +2,7 @@
 
 // 간편 로그인: 부를 이름, 내 위치, 내 차를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AMOUNT_CHOICES, AMOUNT_LIMITS, amountShort, cleanWon, fullNote } from "@/lib/fillAmount";
@@ -159,6 +160,9 @@ export default function LoginForm() {
   const wasSignedIn = mounted && signedIn(saved);
   const economy = fuelEconomy(form);
   const manual = form.kmplSource === "manual";
+  const fromReading = economy.source === "measured" || economy.source === "dashboard";
+  const computedSource = form.car ? "car" : form.size ? "size" : "default";
+  const readingName = form.reading?.kind === "dashboard" ? "계기판 평균 연비" : "실측 연비";
 
   // 유종을 바꾸면 다른 유종의 차종은 지우고 크기 평균(없으면 기본값)으로 셈한다.
   function chooseFuel(fuel: string) {
@@ -566,7 +570,7 @@ export default function LoginForm() {
             </>
           )}
 
-          {(form.kmplSource === "car" || form.kmplSource === "size") && (
+          {(economy.source === "car" || economy.source === "size") && (
             <>
               <p id="drive-label" className="mt-5 text-sm text-ink-soft">
                 주로 다니는 길
@@ -616,23 +620,44 @@ export default function LoginForm() {
               {manual
                 ? "직접 넣은 연비로 셈해요."
                 : economy.source === "default"
-                  ? `지금은 기본값이에요. 차종이나 차 크기를 고르면 내 차에 맞춰 셈해요.`
-                  : `${economy.basis}이에요.`}
+                  ? "지금은 기본값이에요. 차종이나 차 크기를 고르면 내 차에 맞춰 셈해요."
+                  : economy.basis}
             </p>
-            <button
-              type="button"
-              onClick={() =>
-                edit(
-                  manual
-                    ? { kmplSource: form.car ? "car" : form.size ? "size" : "default" }
-                    : { kmplSource: "manual", kmpl: economy.kmpl },
-                )
-              }
-              className="mt-2 text-sm text-ink-soft underline underline-offset-4"
-            >
-              {manual ? "차종·크기로 다시 셈하기" : "연비 직접 넣기"}
-            </button>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-ink-soft">
+              {form.reading && !fromReading && (
+                <button
+                  type="button"
+                  onClick={() => edit({ kmplSource: form.reading!.kind })}
+                  className="underline underline-offset-4"
+                >
+                  {readingName} {form.reading.kmpl}km/L 쓰기
+                </button>
+              )}
+              {(manual || fromReading) && (
+                <button type="button" onClick={() => edit({ kmplSource: computedSource })} className="underline underline-offset-4">
+                  차종·크기로 셈하기
+                </button>
+              )}
+              {!manual && (
+                <button
+                  type="button"
+                  onClick={() => edit({ kmplSource: "manual", kmpl: economy.kmpl })}
+                  className="underline underline-offset-4"
+                >
+                  연비 직접 넣기
+                </button>
+              )}
+            </div>
           </div>
+          <p className="mt-3 text-sm leading-relaxed">
+            <Link href="/records" className="font-semibold underline underline-offset-4">
+              더 정확하게 하려면 계기판도 찍어 주세요
+            </Link>
+            <span className="mt-0.5 block text-xs text-ink-soft">
+              내 기록에서 계기판 사진을 올리면 평균 연비를 내 연비로 쓸 수 있어요. 가득 넣을 때마다 영수증과 누적 주행거리를 남기면
+              두 번째 가득부터 실제 연비(달린 거리 ÷ 넣은 양)로 셈해요.
+            </span>
+          </p>
           <p className="mt-2 text-xs leading-relaxed text-ink-soft">
             공인 연비는 {CAR_DATA.source}에 {koreanDate(CAR_DATA.registeredOn)}까지 등록된 값이에요. 실제 연비는 운전 습관과 날씨에
             따라 달라요.

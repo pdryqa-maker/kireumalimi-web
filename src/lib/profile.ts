@@ -4,6 +4,7 @@ import { browserStore } from "./browserStore";
 import { cleanAmount, DEFAULT_AMOUNT, DEFAULT_FULL_LITERS, isLiters, type Amount } from "./fillAmount";
 import {
   cleanCar,
+  cleanReading,
   DEFAULT_DRIVE,
   DEFAULT_KMPL,
   fuelEconomy,
@@ -13,6 +14,7 @@ import {
   isKmplSource,
   type CarSize,
   type Drive,
+  type KmplReading,
   type KmplSource,
   type MyCar,
 } from "./fuelEconomy";
@@ -28,6 +30,7 @@ export type Profile = {
   size: CarSize | null; // 차종을 모를 때 고른 차 크기
   hybrid: boolean; // 크기 평균을 하이브리드 차로 셈할지
   drive: Drive; // 주로 다니는 길
+  reading: KmplReading | null; // 계기판 평균 연비나 가득→가득 실측 연비
   kmplSource: KmplSource; // 연비를 어디서 얻었는지
   kmpl: number; // 계산에 쓰는 연비. 차종·크기로 정하면 저장할 때마다 다시 셈한다
   location: MyPlace | null;
@@ -45,6 +48,7 @@ export const GUEST: Profile = {
   size: null,
   hybrid: false,
   drive: DEFAULT_DRIVE,
+  reading: null,
   kmplSource: "default",
   kmpl: DEFAULT_KMPL,
   location: null,
@@ -104,8 +108,9 @@ export function cleanProfile(value: unknown): Profile {
   const size = isCarSize(item.size) ? item.size : (car?.size ?? null);
   const hybrid = item.hybrid === true;
   const drive = isDrive(item.drive) ? item.drive : DEFAULT_DRIVE;
+  const reading = cleanReading(item.reading);
   const kmplSource = isKmplSource(item.kmplSource) ? item.kmplSource : isKmpl(kmpl) && kmpl !== DEFAULT_KMPL ? "manual" : "default";
-  const economy = fuelEconomy({ fuel, car, size, hybrid, drive, kmplSource, kmpl });
+  const economy = fuelEconomy({ fuel, car, size, hybrid, drive, kmplSource, kmpl, reading });
   return {
     name: cleanText(item.name, LIMITS.name),
     fuel,
@@ -115,6 +120,7 @@ export function cleanProfile(value: unknown): Profile {
     size,
     hybrid,
     drive,
+    reading,
     kmplSource: economy.source,
     kmpl: economy.kmpl,
     location: cleanPlace(item.location),
