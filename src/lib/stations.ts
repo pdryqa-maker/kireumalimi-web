@@ -170,6 +170,25 @@ function aroundRows(body: unknown) {
 
 const toKm = (meters: number) => Math.round(meters / 100) / 10;
 
+// 좌표가 속한 시군구. 오피넷에는 좌표로 지역을 찾는 기능이 없어, 반경 5km 안에서 가장 가까운 주유소의
+// 시군구 코드(상세 정보의 SIGUNCD)로 정한다. 시군구 경계 근처에서는 옆 시군구가 나올 수 있다.
+export async function areaAt(x: number, y: number) {
+  if (!isKatec(x, y)) throw new RangeError("위치가 올바르지 않습니다.");
+  const { body } = await fetchOpinetTimed("aroundAll", {
+    x: String(x),
+    y: String(y),
+    radius: String(RADIUS_M),
+    prodcd: FUEL_CODES.휘발유,
+    sort: "2",
+  });
+  const nearest = aroundRows(body).sort((a, b) => a.distanceM - b.distanceM)[0];
+  if (!nearest) return null;
+  const [row] = rows(await fetchOpinet("detailById", { id: nearest.id }));
+  const code = String(row?.SIGUNCD ?? "");
+  if (!/^\d{4}$/.test(code)) return null;
+  return { code, name: await areaName(code) };
+}
+
 // 내 위치 반경 5km 안에서 가격이 낮은 순으로 최대 5곳.
 export async function findNearby(fuel: string, origin: Origin, count = 5) {
   const prodcd = FUEL_CODES[fuel];
