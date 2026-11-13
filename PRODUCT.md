@@ -35,8 +35,10 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 
 - Next.js 16 app router, Tailwind CSS 4, TypeScript.
 - Working now: 울산 최저가 lookup (`lowTop10`), station detail with 기준 시각 (`detailById`), the fixed question "지난 고시 뒤 우리 동네는?" from aggregated past-price data, and a Claude (Opus 5.5) chatbot that calls those lookups as tools.
+- Added 2026-11-13: 실질비용 ranking from a 울주군 읍면 start point (`aroundAll`, straight-line round trip), a 유류세 인하 alert preview combining 언제·어디서·얼마 (official values in `src/lib/policy.ts`: extended to 2027-01-31), price-alert conditions the AI proposes and the user saves in the browser, a server-side number check on AI answers, card summaries in chat history, and per-visitor call limits.
 - 등유 안심 screens are not built yet: household runout chart, AI phone call, seller order screen, local-government dashboard.
 - API keys (오피넷, Claude) stay server-side in `.env.local`; the repository is public.
+- The Vercel deployment is public; `src/lib/rateLimit.ts` caps calls per visitor and per server instance.
 - 오피넷 general key is limited to 300 calls a day; chatbot answers take about 5–12 seconds.
 - Prices are 오피넷-reported and may differ from the pump; this must be stated wherever prices appear.
 - Station names are not shown for the past-notice records; whether to name stations elsewhere is undecided.

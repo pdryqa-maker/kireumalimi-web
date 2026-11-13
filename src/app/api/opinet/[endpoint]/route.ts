@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { fetchOpinet, OpinetError } from "@/lib/opinet";
+import { limitByClient } from "@/lib/rateLimit";
 
 // 오피넷 API를 서버에서 대신 호출한다. 인증키가 브라우저로 나가지 않게 하기 위한 경로다.
 const ALLOWED_ENDPOINTS = new Set([
@@ -16,6 +17,9 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/opinet/[
   if (!ALLOWED_ENDPOINTS.has(endpoint)) {
     return Response.json({ error: "허용되지 않은 API입니다." }, { status: 404 });
   }
+
+  const limited = limitByClient(request, "data");
+  if (limited) return limited;
 
   try {
     return Response.json(await fetchOpinet(endpoint, request.nextUrl.searchParams));

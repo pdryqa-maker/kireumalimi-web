@@ -1,4 +1,6 @@
 // 오피넷 API 호출. 인증키는 서버 환경변수에서만 읽는다.
+import { LIMITS, take } from "@/lib/rateLimit";
+
 const CACHE_MS = 10 * 60 * 1000; // 일반 키 한도(하루 300회)를 아끼기 위해 같은 요청은 10분간 재사용
 
 // Next의 fetch 캐시는 요청 주소를 파일에 남겨 인증키가 디스크에 저장되므로 메모리에만 보관한다.
@@ -20,6 +22,11 @@ export async function fetchOpinetTimed(endpoint: string, query: Record<string, s
   const cached = cache.get(cacheKey);
   if (cached && cached.expires > Date.now()) {
     return { body: cached.body, fetchedAt: cached.fetchedAt };
+  }
+
+  // 캐시에 없을 때만 실제 호출이므로 여기서 하루 호출 수를 센다.
+  if (!take("opinetDaily", "all", LIMITS.opinetDaily)) {
+    throw new OpinetError("오늘 오피넷 조회 한도에 가까워 잠시 멈췄어요. 내일 다시 시도해 주세요.");
   }
 
   params.set("code", key);

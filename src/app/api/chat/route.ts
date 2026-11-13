@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { answer, type ChatTurn } from "@/lib/chatbot";
+import { limitByClient, limitDaily } from "@/lib/rateLimit";
 
 const MAX_TURNS = 20;
 const MAX_LENGTH = 500;
@@ -22,13 +23,18 @@ function isValid(history: unknown): history is ChatTurn[] {
 }
 
 export async function POST(request: Request) {
+  const limited =
+    limitByClient(request, "chat") ??
+    limitDaily("chatDaily", "오늘 AI 답변 한도를 다 썼어요. 아래 버튼 질문은 계속 쓸 수 있어요.");
+  if (limited) return limited;
+
   const body = await request.json().catch(() => null);
   if (!isValid(body?.messages)) {
     return Response.json({ error: "질문 형식이 올바르지 않습니다." }, { status: 400 });
   }
 
   try {
-    return Response.json({ text: await answer(body.messages) });
+    return Response.json(await answer(body.messages));
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
       return Response.json({ error: "Claude API 키를 확인해 주세요." }, { status: 500 });

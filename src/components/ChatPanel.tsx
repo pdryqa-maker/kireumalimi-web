@@ -1,11 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { AlertProposal } from "@/lib/chatbot";
+import { DEFAULT_PLACE, PLACES } from "@/lib/places";
+import { addAlert, alertStore, parseAlerts, removeAlert, type SavedAlert } from "@/lib/savedAlerts";
+import {
+  AlertCard,
+  AlertCheckCard,
+  CostCard,
+  TaxCard,
+  type AlertCheck,
+  type AlertStatus,
+  type CostResult,
+  type CostStation,
+  type PriceRow,
+  type TaxImpact,
+} from "./AnswerCards";
+import { basis, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 
 const FUELS = ["휘발유", "경유"];
+const LITER_OPTIONS = [20, 30, 40, 50, 60];
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
-const FREE_EXAMPLE = "울주군 경유 제일 싼 곳이랑 기준 시각 알려 줘";
-const PUMP_NOTE = "오피넷에 보고된 가격이라 주유소 현장 가격과 다를 수 있어요.";
+const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
+// 서버가 받는 대화 한도(20턴, 한 턴 500자)에 맞춘다.
+const MAX_HISTORY = 19;
+const MAX_TURN_LENGTH = 500;
+// 알림 카드 구분용 번호. 화면 상태에 쓰지 않으므로 모듈 변수로 둔다.
+let alertSeq = 0;
 
 type Region = { key: string; area: string; name: string };
 type Station = { id: string; name: string; brand: string; price: number; address: string };
@@ -27,14 +48,21 @@ type NoticeFigures = {
   meanMovedWon: number;
   atOrBeyondNotice: number;
 };
+type Check = { verified: number; blocked: boolean };
 type SkeletonKind = "list" | "detail" | "text";
+// 카드 답변에는 summary를 붙인다. 자유 질문을 보낼 때 대화 기록에 이 요약이 들어가, AI가 이미 답한 질문을 다시 답하지 않는다.
 type Reply =
-  | { from: "bot"; text: string }
-  | { from: "bot"; notice: { text: string; figures: NoticeFigures } }
-  | { from: "bot"; title: string; fetchedAt: string; stations: Station[] }
-  | { from: "bot"; detail: StationDetail }
+  | { from: "bot"; text: string; check?: Check }
+  | { from: "bot"; summary: string; notice: { text: string; figures: NoticeFigures } }
+  | { from: "bot"; summary: string; title: string; fetchedAt: string; stations: Station[] }
+  | { from: "bot"; summary: string; detail: StationDetail }
+  | { from: "bot"; summary: string; cost: CostResult }
+  | { from: "bot"; summary: string; tax: TaxImpact; taxCost: CostResult | null }
+  | { from: "bot"; summary: string; alert: AlertProposal; status: AlertStatus; id: number }
+  | { from: "bot"; summary: string; alertCheck: AlertCheck }
   | { from: "bot"; error: string; retry: () => void };
 type Message = { from: "user"; text: string } | Reply;
+type Turn = { role: "user" | "assistant"; content: string };
 
 async function getJson(url: string, init?: RequestInit) {
   try {
@@ -46,37 +74,56 @@ async function getJson(url: string, init?: RequestInit) {
   }
 }
 
-const won = (price: number) => price.toLocaleString("ko-KR");
+const listSummary = (stations: { name: string; price: number }[]) =>
+  stations.map((station, rank) => `${rank + 1}. ${station.name} ${won(station.price)}원`).join(", ");
 
-// "2026-11-11 07:10" → "11월 11일 07:10 기준"
-function basis(updatedAt: string | null) {
-  if (!updatedAt) return "기준 시각 없음";
-  const [date, time] = updatedAt.split(" ");
-  const [, month, day] = date.split("-").map(Number);
-  return `${month}월 ${day}일 ${time} 기준`;
+function costSummary(cost: CostResult) {
+  const rows = cost.stations
+    .map((s, rank) => `${rank + 1}. ${s.name} 리터당 ${won(s.price)}원, 직선 ${s.distanceKm}km, 총 ${won(s.totalWon)}원`)
+    .join("; ");
+  return `${cost.place} 출발 ${cost.fuel} ${cost.liters}L 실질비용 순(연비 ${cost.kmpl}km/L, 직선 왕복, ${koreanTime(cost.fetchedAt)} 조회): ${rows}`;
 }
 
-// ISO 시각 → "11월 11일 20:31" (한국 시간)
-function koreanTime(iso: string) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("ko-KR", {
-      timeZone: "Asia/Seoul",
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(new Date(iso))
-      .map((part) => [part.type, part.value]),
+function taxSummary(tax: TaxImpact, cost: CostResult | null) {
+  const best = cost?.stations[0];
+  return (
+    `유류세 인하는 ${tax.endsOn} 종료 예정(${tax.decidedOn} 연장 결정). 끝나면 ${tax.fuel} ${tax.liters}L에 최대 ${won(tax.maxExtraWon)}원 더 듦(리터당 ${tax.wonPerLiter}원).` +
+    (best && cost ? ` ${cost.place} 출발 거리까지 따진 추천: ${best.name} 리터당 ${won(best.price)}원.` : "")
   );
-  return `${parts.month}월 ${parts.day}일 ${parts.hour}:${parts.minute}`;
 }
 
-// "2026-07-01" → "7월 1일"
-function monthDay(date: string) {
-  const [, month, day] = date.split("-").map(Number);
-  return `${month}월 ${day}일`;
+const ALERT_STATUS: Record<AlertStatus, string> = {
+  proposed: "저장 전",
+  saved: "저장함",
+  unsaved: "저장 못 함",
+  dismissed: "저장 안 함",
+};
+const alertSummary = (alert: AlertProposal, status: AlertStatus) =>
+  `알림 조건: ${alert.areaName} ${alert.fuel} ${won(alert.belowWon)}원 이하(${ALERT_STATUS[status]})`;
+
+// 화면의 대화를 서버로 보낼 대화 기록으로 바꾼다. 실패한 질문은 빼고, 같은 쪽이 이어지면 합쳐서 질문과 답이 번갈아 오게 한다.
+function toTurns(messages: Message[]) {
+  const turns: Turn[] = [];
+  for (const message of messages) {
+    if (message.from === "user") {
+      const last = turns.at(-1);
+      if (last?.role === "user") last.content = message.text;
+      else turns.push({ role: "user", content: message.text });
+      continue;
+    }
+    const content = "text" in message ? message.text : "summary" in message ? message.summary : null;
+    if (content === null) {
+      if (turns.at(-1)?.role === "user") turns.pop();
+      continue;
+    }
+    const last = turns.at(-1);
+    if (last?.role === "assistant") last.content = `${last.content}\n${content}`;
+    else turns.push({ role: "assistant", content });
+  }
+  const recent = turns.slice(-MAX_HISTORY);
+  return recent
+    .slice(Math.max(0, recent.findIndex((turn) => turn.role === "user")))
+    .map((turn) => ({ ...turn, content: turn.content.slice(0, MAX_TURN_LENGTH) }));
 }
 
 function SendIcon() {
@@ -84,6 +131,14 @@ function SendIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 19V5" />
       <path d="m5 12 7-7 7 7" />
+    </svg>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="pointer-events-none absolute right-2.5 size-4 text-ink-soft" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
@@ -113,29 +168,38 @@ function Skeleton({ kind }: { kind: SkeletonKind }) {
   );
 }
 
+const SELECT =
+  "appearance-none rounded-full bg-ground py-1.5 pr-8 pl-3.5 text-sm font-semibold shadow-inset-sm focus-visible:outline-offset-1";
+
 export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: string; region: Region }) {
   const [fuel, setFuel] = useState(FUELS[0]);
+  const [place, setPlace] = useState(DEFAULT_PLACE);
+  const [liters, setLiters] = useState(40);
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState<SkeletonKind | null>(null);
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const savedRaw = useSyncExternalStore(alertStore.subscribe, alertStore.getSnapshot, alertStore.getServerSnapshot);
+  const saved = useMemo(() => parseAlerts(savedRaw), [savedRaw]);
+  const placeName = PLACES[place].name;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
 
-  async function run(kind: SkeletonKind, answer: () => Promise<Reply | null>) {
+  async function run(kind: SkeletonKind, answer: () => Promise<Reply | Reply[] | null>) {
     setPending(kind);
     const reply = await answer();
     const retry = () => {
       setMessages((current) => current.filter((message) => !("retry" in message && message.retry === retry)));
       run(kind, answer);
     };
-    setMessages((current) => [...current, reply ?? { from: "bot", error: ERROR_TEXT, retry }]);
+    const replies = reply === null ? [{ from: "bot" as const, error: ERROR_TEXT, retry }] : [reply].flat();
+    setMessages((current) => [...current, ...replies]);
     setPending(null);
   }
 
-  function ask(question: string, kind: SkeletonKind, answer: () => Promise<Reply | null>) {
+  function ask(question: string, kind: SkeletonKind, answer: () => Promise<Reply | Reply[] | null>) {
     setMessages((current) => [...current, { from: "user", text: question }]);
     run(kind, answer);
   }
@@ -146,39 +210,110 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
       const { ok, body } = await getJson(`/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: region.area })}`);
       if (!ok || !body) return null;
       if (body.stations.length === 0) return { from: "bot", text: "조회된 주유소가 없어요." };
-      return { from: "bot", title: `${body.area} ${chosen} 최저가`, fetchedAt: body.fetchedAt, stations: body.stations };
+      const title = `${body.area} ${chosen} 최저가`;
+      return {
+        from: "bot",
+        title,
+        fetchedAt: body.fetchedAt,
+        stations: body.stations,
+        summary: `${title}(${koreanTime(body.fetchedAt)} 조회): ${listSummary(body.stations)}`,
+      };
     });
   };
 
-  const askDetail = (station: Station) =>
+  const askDetail = (station: { id: string; name: string }) =>
     ask(`${station.name} 자세히 알려 줘`, "detail", async () => {
       const { ok, body } = await getJson(`/api/stations/${station.id}`);
-      return ok && body ? { from: "bot", detail: body } : null;
+      if (!ok || !body) return null;
+      const prices = (body as StationDetail).prices
+        .map((price) => `${price.fuel} ${won(price.price)}원(${basis(price.updatedAt)})`)
+        .join(", ");
+      return { from: "bot", detail: body, summary: `${body.name} 상세: ${prices}` };
     });
+
+  const askTotalCost = () => {
+    const [chosenFuel, chosenPlace, chosenLiters] = [fuel, place, liters];
+    ask(`${PLACES[chosenPlace].name}에서 거리까지 따지면 ${chosenFuel} 어디가 나아?`, "list", async () => {
+      const query = new URLSearchParams({ fuel: chosenFuel, place: chosenPlace, liters: String(chosenLiters) });
+      const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
+      if (!ok || !body) return null;
+      if (body.stations.length === 0) {
+        return { from: "bot", text: `${body.place} 반경 ${body.radiusKm}km 안에서 ${chosenFuel} 가격을 알린 주유소가 없어요.` };
+      }
+      return { from: "bot", cost: body, summary: costSummary(body) };
+    });
+  };
+
+  const askTax = () => {
+    const [chosenFuel, chosenPlace, chosenLiters] = [fuel, place, liters];
+    ask(`유류세 인하 끝나면 ${chosenFuel} ${chosenLiters}L에 얼마 더 들어?`, "text", async () => {
+      const query = new URLSearchParams({ fuel: chosenFuel, place: chosenPlace, liters: String(chosenLiters) });
+      const { ok, body } = await getJson(`/api/alert-preview?${query}`);
+      if (!ok || !body?.tax) return null;
+      return { from: "bot", tax: body.tax, taxCost: body.cost, summary: taxSummary(body.tax, body.cost) };
+    });
+  };
 
   const askFixed = () => {
     const chosen = fuel;
     ask(fixedQuestion, "text", async () => {
       const { ok, body } = await getJson(`/api/fixed-question?${new URLSearchParams({ region: region.key, fuel: chosen })}`);
-      return ok && body?.figures ? { from: "bot", notice: { text: body.text, figures: body.figures } } : null;
+      return ok && body?.figures
+        ? { from: "bot", notice: { text: body.text, figures: body.figures }, summary: body.text }
+        : null;
     });
   };
 
+  const checkAlert = (alert: AlertProposal) =>
+    ask(`${alert.areaName} ${alert.fuel} ${won(alert.belowWon)}원 이하 알림, 지금 확인해 줘`, "list", async () => {
+      const { ok, body } = await getJson(`/api/stations/cheapest?${new URLSearchParams({ fuel: alert.fuel, area: alert.area })}`);
+      if (!ok || !body) return null;
+      const stations: PriceRow[] = body.stations;
+      const matches = stations.filter((station) => station.price <= alert.belowWon);
+      const lowest = stations[0] ?? null;
+      return {
+        from: "bot",
+        alertCheck: { ...alert, fetchedAt: body.fetchedAt, matches, lowest },
+        summary:
+          `${alert.areaName} ${alert.fuel} ${won(alert.belowWon)}원 이하 알림 확인(${koreanTime(body.fetchedAt)} 조회): ` +
+          (matches.length > 0 ? `조건에 맞는 곳 ${listSummary(matches)}` : `아직 없음. 최저가 ${lowest ? `${lowest.name} ${won(lowest.price)}원` : "없음"}`),
+      };
+    });
+
+  function setAlertStatus(id: number, status: AlertStatus) {
+    setMessages((current) =>
+      current.map((message) =>
+        "alert" in message && message.id === id ? { ...message, status, summary: alertSummary(message.alert, status) } : message,
+      ),
+    );
+  }
+
+  function saveAlert(id: number, alert: AlertProposal) {
+    const stored = addAlert(alert);
+    setAlertStatus(id, stored ? "saved" : "unsaved");
+    checkAlert(alert);
+  }
+
   function askFree(question: string) {
-    // 카드 답변은 빼고 글로 오간 대화만 보낸다. 서버 한도(20턴)에 맞춰 최근 것만 쓰고, 첫 턴은 사용자여야 한다.
-    const turns = [...messages, { from: "user" as const, text: question }]
-      .flatMap((message) => ("text" in message ? [message] : []))
-      .map((message) => ({ role: message.from === "user" ? "user" : "assistant", content: message.text }))
-      .slice(-19);
-    const history = turns.slice(turns.findIndex((turn) => turn.role === "user"));
+    const history = toTurns([...messages, { from: "user", text: question }]);
     ask(question, "text", async () => {
       const { ok, body } = await getJson("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: history }),
       });
-      if (ok && body?.text) return { from: "bot", text: body.text };
-      return body?.error ? { from: "bot", text: body.error } : null;
+      if (!ok || !body?.text) return body?.error ? { from: "bot", text: body.error } : null;
+      const replies: Reply[] = [{ from: "bot", text: body.text, check: body.check ?? undefined }];
+      if (body.alert) {
+        replies.push({
+          from: "bot",
+          alert: body.alert,
+          status: "proposed",
+          id: alertSeq++,
+          summary: alertSummary(body.alert, "proposed"),
+        });
+      }
+      return replies;
     });
   }
 
@@ -193,8 +328,10 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   const busy = pending !== null;
   const suggestions = [
     { label: `${region.name}에서 제일 싼 ${fuel} 어디야?`, onClick: askCheapest },
+    { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost },
+    { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax },
     { label: fixedQuestion, onClick: askFixed },
-    { label: FREE_EXAMPLE, onClick: () => askFree(FREE_EXAMPLE) },
+    { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
   ];
 
   return (
@@ -209,21 +346,22 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
               {region.name} 주유소, 말로 물어보세요
             </h1>
             <p className="mt-3 text-center leading-relaxed text-ink-soft text-balance">
-              한국석유공사 오피넷에 보고된 가격으로 답하고, 그 가격이 언제 기준인지 함께 알려 드려요.
+              한국석유공사 오피넷에 보고된 가격으로 답하고, 거리와 내 주유량, 제도 변경까지 따져 드려요.
             </p>
-            <ul className="mt-8 space-y-4">
+            <ul className="mt-7 space-y-3.5">
               {suggestions.map((suggestion) => (
                 <li key={suggestion.label}>
                   <button
                     type="button"
                     onClick={suggestion.onClick}
-                    className="w-full rounded-2xl px-5 py-4 text-left font-medium shadow-raised transition-shadow hover:shadow-raised-sm active:shadow-inset"
+                    className="w-full rounded-2xl px-5 py-3.5 text-left font-medium shadow-raised transition-shadow hover:shadow-raised-sm active:shadow-inset"
                   >
                     {suggestion.label}
                   </button>
                 </li>
               ))}
             </ul>
+            {saved.length > 0 && <SavedAlerts saved={saved} onCheck={checkAlert} />}
           </div>
         )}
 
@@ -236,6 +374,27 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
               >
                 {message.text}
               </p>
+            );
+          }
+          if ("tax" in message) {
+            return <TaxCard key={index} tax={message.tax} cost={message.taxCost} />;
+          }
+          if ("cost" in message) {
+            return <CostCard key={index} cost={message.cost} busy={busy} onDetail={(station: CostStation) => askDetail(station)} />;
+          }
+          if ("alertCheck" in message) {
+            return <AlertCheckCard key={index} check={message.alertCheck} />;
+          }
+          if ("alert" in message) {
+            return (
+              <AlertCard
+                key={index}
+                alert={message.alert}
+                status={message.status}
+                busy={busy}
+                onSave={() => saveAlert(message.id, message.alert)}
+                onDismiss={() => setAlertStatus(message.id, "dismissed")}
+              />
             );
           }
           if ("stations" in message) {
@@ -359,12 +518,16 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
             );
           }
           return (
-            <p
-              key={index}
-              className="w-fit max-w-[34rem] animate-rise whitespace-pre-line rounded-3xl rounded-bl-md p-4 text-[15px] leading-relaxed shadow-raised"
-            >
-              {message.text}
-            </p>
+            <div key={index} className="w-fit max-w-[34rem] animate-rise">
+              <p className="whitespace-pre-line rounded-3xl rounded-bl-md p-4 text-[15px] leading-relaxed shadow-raised">
+                {message.text}
+              </p>
+              {message.check && message.check.verified > 0 && (
+                <p className="mt-2.5 w-fit rounded-full px-2.5 py-1 text-xs font-medium text-ink-soft tabular-nums shadow-inset-sm">
+                  숫자 {message.check.verified}개 · 조회 결과와 대조해 일치
+                </p>
+              )}
+            </div>
           );
         })}
 
@@ -373,7 +536,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
       </div>
 
       <div className="space-y-3 border-t border-hairline/70 px-4 pt-4 pb-4 sm:px-7 sm:pb-6">
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <div role="radiogroup" aria-label="유종" className="flex shrink-0 rounded-full p-1 shadow-inset-sm">
             {FUELS.map((item) => (
               <button
@@ -390,29 +553,56 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
               </button>
             ))}
           </div>
-          {(messages.length > 0 || busy) && (
-            <div className="no-scrollbar -my-2 flex min-w-0 flex-1 gap-2.5 overflow-x-auto py-2 pr-1 pl-1 sm:flex-wrap sm:overflow-visible">
-              {suggestions.map((suggestion) => (
-                <button
-                  key={suggestion.label}
-                  type="button"
-                  onClick={suggestion.onClick}
-                  disabled={busy}
-                  className="shrink-0 rounded-full px-3.5 py-2 text-sm whitespace-nowrap shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:opacity-50"
-                >
-                  {suggestion.label}
-                </button>
+          <span className="relative flex items-center">
+            <select aria-label="출발 위치" title="출발 위치(읍면 행정복지센터)" value={place} onChange={(event) => setPlace(event.target.value)} className={SELECT}>
+              {Object.entries(PLACES).map(([key, item]) => (
+                <option key={key} value={key}>
+                  {item.name}
+                </option>
               ))}
-            </div>
-          )}
+            </select>
+            <Chevron />
+          </span>
+          <span className="relative flex items-center">
+            <select
+              aria-label="주유량"
+              title="한 번에 넣는 주유량"
+              value={liters}
+              onChange={(event) => setLiters(Number(event.target.value))}
+              className={SELECT}
+            >
+              {LITER_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}L
+                </option>
+              ))}
+            </select>
+            <Chevron />
+          </span>
         </div>
+
+        {(messages.length > 0 || busy) && (
+          <div className="no-scrollbar -my-2 flex gap-2.5 overflow-x-auto py-2 pr-1 pl-1 sm:flex-wrap sm:overflow-visible">
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion.label}
+                type="button"
+                onClick={suggestion.onClick}
+                disabled={busy}
+                className="shrink-0 rounded-full px-3.5 py-2 text-sm whitespace-nowrap shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:opacity-50"
+              >
+                {suggestion.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <form onSubmit={submit} className="flex items-center gap-3">
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             maxLength={500}
-            placeholder="예: 언양 쪽 경유 제일 싼 곳 알려 줘"
+            placeholder="예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"
             aria-label="질문 입력"
             className="min-w-0 flex-1 rounded-full bg-transparent px-5 py-3.5 text-[15px] shadow-inset placeholder:text-ink-soft focus-visible:outline-offset-1"
           />
@@ -426,6 +616,37 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           </button>
         </form>
       </div>
+    </section>
+  );
+}
+
+function SavedAlerts({ saved, onCheck }: { saved: SavedAlert[]; onCheck: (alert: SavedAlert) => void }) {
+  return (
+    <section aria-label="저장한 가격 알림" className="mt-7">
+      <h2 className="text-sm font-semibold text-ink-soft">내 가격 알림</h2>
+      <ul className="mt-2 space-y-2.5">
+        {saved.map((alert) => (
+          <li key={alert.id} className="flex flex-wrap items-center gap-2.5 rounded-2xl px-4 py-3 shadow-inset-sm">
+            <span className="flex-1 font-semibold">
+              {alert.areaName} {alert.fuel} <span className="tabular-nums">{won(alert.belowWon)}</span>원 이하
+            </span>
+            <button
+              type="button"
+              onClick={() => onCheck(alert)}
+              className="rounded-full px-3.5 py-1.5 text-sm font-semibold shadow-raised-sm active:shadow-inset-sm"
+            >
+              지금 확인
+            </button>
+            <button
+              type="button"
+              onClick={() => removeAlert(alert.id)}
+              className="rounded-full px-3.5 py-1.5 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm"
+            >
+              삭제
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

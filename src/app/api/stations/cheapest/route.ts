@@ -1,9 +1,12 @@
 import type { NextRequest } from "next/server";
 import { OpinetError } from "@/lib/opinet";
+import { limitByClient } from "@/lib/rateLimit";
 import { findCheapest } from "@/lib/stations";
 
 // 예: /api/stations/cheapest?fuel=휘발유&area=1831
 export async function GET(request: NextRequest) {
+  const limited = limitByClient(request, "data");
+  if (limited) return limited;
   const { searchParams } = request.nextUrl;
   try {
     return Response.json(
