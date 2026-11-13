@@ -5,14 +5,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signedIn } from "@/lib/profile";
-import { BellIcon, ChatIcon, UserIcon } from "./icons";
+import { BellIcon, CompassIcon, HomeIcon, RecordsIcon, UserIcon } from "./icons";
 import { useMounted, useProfile } from "./useStored";
 
+// 탭은 챗봇으로 들어가는 입구다. 홈·탐색·내 기록은 같은 챗봇에 주제별 시작 질문만 다르다. 내 정보는 프로필 버튼으로 연다.
 const NAV = [
-  { href: "/", label: "주유 챗봇", Icon: ChatIcon },
-  { href: "/alerts", label: "내 알림", Icon: BellIcon },
-  { href: "/login", label: "내 정보", Icon: UserIcon },
+  { href: "/", label: "홈", Icon: HomeIcon },
+  { href: "/explore", label: "탐색", Icon: CompassIcon },
+  { href: "/records", label: "내 기록", Icon: RecordsIcon },
+  { href: "/alerts", label: "알림", Icon: BellIcon },
 ];
+// 챗봇 화면은 입력창 아래에 데이터 출처를 적으므로 바닥글을 빼는 주소
+const CHAT_PATHS = ["/", "/explore", "/records"];
 
 // 한국석유공사 로고(공사 원본 파일에서 바깥 여백만 잘라 냄). 서포터즈 활동 표시로 머리글에 둔다.
 const KNOC_LOGO = { src: "/brand/knoc-logo.png", width: 429, height: 208 };
@@ -95,8 +99,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">{children}</main>
-        {/* 챗봇 화면은 입력창 아래에 같은 출처를 적으므로 여기서는 뺀다. */}
-        {path !== "/" && (
+        {!CHAT_PATHS.includes(path) && (
           <footer className="px-4 pt-6 pb-28 text-center text-xs text-ink-soft lg:pb-5">
             유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이
           </footer>

@@ -11,7 +11,7 @@ import { priceCapNotice } from "@/lib/policy";
 import { fuelName, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
-import { addLedgerEntry, ledgerForServer, ledgerStore, parseLedger } from "@/lib/savedLedger";
+import { addLedgerEntry, ledgerForServer, ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
 import { parseWatch, watchStore } from "@/lib/watchSettings";
 import {
   AlertCard,
@@ -33,7 +33,7 @@ import {
 import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary } from "./FillCards";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
-import { CalendarIcon, CameraIcon, PinIcon, ReceiptIcon, RouteIcon } from "./icons";
+import { CalendarIcon, CameraIcon, ChartIcon, DropIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const FUELS = PROFILE_FUELS;
@@ -47,6 +47,9 @@ const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
 const EXPLAIN_QUESTION = "요즘 기름값 왜 이래?";
 const REPORT_QUESTION = "이번 달 주유 리포트 보여 줘";
 const UREA_QUESTION = "요소수 재고 있는 주유소 알려 줘";
+const LAST_MONTH_QUESTION = "지난달 주유 리포트 보여 줘";
+const STANDING_QUESTION = "내 단골 주유소, 아직 동네에서 싼 편이야?";
+const SAVED_QUESTION = "이번 달 기름값, 평균보다 얼마나 아꼈어?";
 // 영수증 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
 const PHOTO_MAX_SIDE = 1600;
 const PHOTO_MAX_CHARS = 2_800_000;
@@ -60,6 +63,8 @@ const MAX_TURN_LENGTH = 500;
 let alertSeq = 0;
 
 type Region = { key: string; area: string; name: string };
+// 탭: 홈(오늘의 기름값·제도), 탐색(주유소 찾기·점검·요소수), 내 기록(영수증·리포트·예보). 셋 다 같은 챗봇이다.
+export type ChatSection = "home" | "explore" | "records";
 type Station = { id: string; name: string; brand: string; price: number; address?: string; distanceKm?: number };
 type StationDetail = {
   name: string;
@@ -100,6 +105,7 @@ type Reply =
 type Message = { from: "user"; text: string; photo?: string } | Reply;
 type Photo = { preview: string; mediaType: "image/jpeg"; data: string };
 type Turn = { role: "user" | "assistant"; content: string };
+type Starter = { label: string; onClick: () => void; Icon?: (props: { className?: string }) => React.ReactNode };
 
 // 고른 사진을 줄여 JPEG로 바꾼다. 휴대폰 사진은 커서 그대로 보내면 서버 한도를 넘는다.
 async function shrinkPhoto(file: File): Promise<Photo | null> {
@@ -208,6 +214,12 @@ function toTurns(messages: Message[]) {
     .map((turn) => ({ ...turn, content: turn.content.slice(0, MAX_TURN_LENGTH) }));
 }
 
+// "2026-11-13" → "2026-10"
+function lastMonth(today: string) {
+  const [year, month] = today.split("-").map(Number);
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+}
+
 // 시간대 인사(한국 시간). 오늘의 기름 소식을 아직 못 받았을 때만 쓴다.
 function greeting(hour: number) {
   if (hour >= 5 && hour < 11) return "좋은 아침이에요";
@@ -276,10 +288,48 @@ function Skeleton({ kind }: { kind: SkeletonKind }) {
   );
 }
 
+// 시작 화면의 큰 질문 카드 4개와 작은 칩
+function StarterList({ cards, chips, children }: { cards: Starter[]; chips: Starter[]; children?: React.ReactNode }) {
+  return (
+    <>
+      <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cards.map(({ label, onClick, Icon }) => (
+          <li key={label}>
+            <button
+              type="button"
+              onClick={onClick}
+              className="flex h-full min-h-[6.75rem] w-full flex-col justify-between gap-3 rounded-2xl bg-canvas p-4 text-left text-[15px] leading-snug font-medium transition-colors hover:bg-flame-soft lg:min-h-[8.5rem]"
+            >
+              {Icon && <Icon className="size-6 text-flame" />}
+              <span>{label}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {chips.map((chip) => (
+          <button key={chip.label} type="button" onClick={chip.onClick} className="rounded-full px-3.5 py-2 text-sm shadow-raised-sm hover:bg-canvas">
+            {chip.label}
+          </button>
+        ))}
+        {children}
+      </div>
+    </>
+  );
+}
+
 const SELECT =
   "appearance-none rounded-full bg-ground py-1.5 pr-8 pl-3.5 text-sm font-semibold shadow-inset-sm focus-visible:outline-offset-1";
 
-export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: string; region: Region }) {
+export default function ChatPanel({
+  fixedQuestion,
+  region,
+  section = "home",
+}: {
+  fixedQuestion: string;
+  region: Region;
+  section?: ChatSection;
+}) {
   const profile = useProfile();
   const mounted = useMounted();
   // 화면에서 고른 값이 있으면 그 값, 없으면 내 정보(로그인 전에는 기본값)를 쓴다.
@@ -292,7 +342,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   const endRef = useRef<HTMLDivElement>(null);
   useStored(alertStore, parseAlerts);
   useStored(watchStore, parseWatch);
-  useStored(fillStore, parseFills);
+  const fills = useStored(fillStore, parseFills);
   const ledger = useStored(ledgerStore, parseLedger);
   const fuel = fuelChoice ?? profile.fuel;
   const liters = litersChoice ?? profile.liters;
@@ -428,13 +478,13 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     }));
 
   // 이번 달 주유 리포트. AI 없이 장부로 셈하고, 단가는 그날 시도 평균과 비교한다.
-  const askReport = () => {
+  const askReport = (month?: string) => {
     const car = { ...profile, fuel };
-    ask(REPORT_QUESTION, "detail", async () => {
+    ask(month ? LAST_MONTH_QUESTION : REPORT_QUESTION, "detail", async () => {
       const { ok, body } = await getJson("/api/fuel-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ledger: ledgerForServer(), profile: car }),
+        body: JSON.stringify({ ledger: ledgerForServer(), profile: car, month }),
       });
       if (!ok || !body?.month) return body?.error ? { from: "bot", text: body.error } : null;
       return { from: "bot", report: body, summary: reportSummary(body) };
@@ -588,23 +638,47 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   // 영수증으로 남긴 가장 최근 주유소가 있으면 그곳을 점검하자고 권한다.
   const lastStation = mounted ? ledger.findLast((entry) => entry.stationName)?.stationName : null;
   const trustQuestion = lastStation ? `${lastStation} 믿을 만한지 점검해 줘` : "단골 주유소 믿을 만한지 점검해 줘";
-  const cards = [
-    { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
-    { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost, Icon: RouteIcon },
-    { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
-    { label: FORECAST_QUESTION, onClick: askForecast, Icon: CalendarIcon },
-  ];
-  const chips = [
-    { label: EXPLAIN_QUESTION, onClick: () => askFree(EXPLAIN_QUESTION) },
-    { label: CAP_QUESTION, onClick: askCap },
-    { label: fixedQuestion, onClick: askFixed },
-    { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
-    { label: "영수증 사진으로 주유 기록", onClick: pickPhoto },
-    { label: REPORT_QUESTION, onClick: askReport },
-    { label: trustQuestion, onClick: () => askFree(trustQuestion) },
-    { label: UREA_QUESTION, onClick: () => askFree(UREA_QUESTION) },
-  ];
+  const alttleQuestion = `${homeArea.name} 알뜰주유소, 진짜 싼 거 맞아?`;
+  // 탭마다 시작 질문(큰 카드 4개와 작은 칩)이 다르다. 대화 중 입력창 위에도 같은 질문을 둔다.
+  const starters: Record<ChatSection, { cards: Starter[]; chips: Starter[] }> = {
+    home: {
+      cards: [
+        { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
+        { label: EXPLAIN_QUESTION, onClick: () => askFree(EXPLAIN_QUESTION), Icon: ChartIcon },
+        { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
+        { label: CAP_QUESTION, onClick: askCap, Icon: PumpIcon },
+      ],
+      chips: [
+        { label: fixedQuestion, onClick: askFixed },
+        { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
+      ],
+    },
+    explore: {
+      cards: [
+        { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
+        { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost, Icon: RouteIcon },
+        { label: trustQuestion, onClick: () => askFree(trustQuestion), Icon: ShieldIcon },
+        { label: UREA_QUESTION, onClick: () => askFree(UREA_QUESTION), Icon: DropIcon },
+      ],
+      chips: [
+        { label: STANDING_QUESTION, onClick: () => askFree(STANDING_QUESTION) },
+        { label: alttleQuestion, onClick: () => askFree(alttleQuestion) },
+      ],
+    },
+    records: {
+      cards: [
+        { label: RECEIPT_QUESTION, onClick: pickPhoto, Icon: CameraIcon },
+        { label: REPORT_QUESTION, onClick: () => askReport(), Icon: ChartIcon },
+        { label: FORECAST_QUESTION, onClick: askForecast, Icon: CalendarIcon },
+        { label: LAST_MONTH_QUESTION, onClick: () => askReport(lastMonth(kstClock().today)), Icon: ReceiptIcon },
+      ],
+      chips: [{ label: SAVED_QUESTION, onClick: () => askFree(SAVED_QUESTION) }],
+    },
+  };
+  const { cards, chips } = starters[section];
   const suggestions = [...cards, ...chips];
+  // 내 기록 탭 첫 줄: 장부와 주유 기록을 합친 횟수와 가장 최근 날짜
+  const records = section === "records" ? mergeLedger(ledger, fills) : [];
   const today = mounted ? kstClock().today : "";
   const briefing = useBriefing(fuel, homeArea.code, mounted);
   const headline = mounted ? (newsHeadline(today, fuel, briefing?.data ?? null) ?? greeting(kstClock().hour)) : "안녕하세요";
@@ -612,7 +686,26 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   return (
     <section aria-label="주유 챗봇" className="flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]">
       <div aria-live="polite" className="flex flex-1 flex-col gap-5 overflow-y-auto pt-4 pb-4">
-        {messages.length === 0 && !busy && (
+        {messages.length === 0 && !busy && section !== "home" && (
+          <div className="m-auto w-full max-w-2xl py-4">
+            <div className="flex flex-col items-center text-center">
+              <span aria-hidden="true" className="flame-orb size-12" />
+              <h1 className="mt-4 text-[1.75rem] leading-tight font-bold tracking-tight text-balance sm:text-4xl">
+                {section === "explore" ? "주유소 탐색" : "내 기록"}
+              </h1>
+              <p className="mt-2 text-ink-soft text-pretty">
+                {section === "explore"
+                  ? "가까운 최저가부터 믿을 만한 곳, 요소수 재고까지 물어보세요."
+                  : records.length > 0
+                    ? `주유 기록 ${records.length}번 · 가장 최근 ${dayWithWeekday(records.at(-1)!.date)}`
+                    : "영수증 사진을 보내면 주유 기록이 쌓이고, 달마다 리포트로 모아 드려요."}
+              </p>
+            </div>
+            <StarterList cards={cards} chips={chips} />
+          </div>
+        )}
+
+        {messages.length === 0 && !busy && section === "home" && (
           <div className="m-auto w-full max-w-2xl py-4">
             <div className="flex flex-col items-center text-center">
               <span aria-hidden="true" className="flame-orb flame-orb-glow size-16 sm:size-[4.5rem]" />
@@ -635,35 +728,11 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
               </p>
             )}
 
-            <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {cards.map(({ label, onClick, Icon }) => (
-                <li key={label}>
-                  <button
-                    type="button"
-                    onClick={onClick}
-                    className="flex h-full min-h-[6.75rem] w-full flex-col justify-between gap-3 rounded-2xl bg-canvas p-4 text-left text-[15px] leading-snug font-medium transition-colors hover:bg-flame-soft lg:min-h-[8.5rem]"
-                  >
-                    <Icon className="size-6 text-flame" />
-                    <span>{label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {chips.map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={chip.onClick}
-                  className="rounded-full px-3.5 py-2 text-sm shadow-raised-sm hover:bg-canvas"
-                >
-                  {chip.label}
-                </button>
-              ))}
+            <StarterList cards={cards} chips={chips}>
               <Link href="/alerts" className="rounded-full px-3.5 py-2 text-sm text-ink-soft shadow-raised-sm hover:bg-canvas">
-                내 알림 조건 걸기
+                알림 조건 걸기
               </Link>
-            </div>
+            </StarterList>
           </div>
         )}
 

@@ -89,3 +89,44 @@ export const CameraIcon = (props: IconProps) => (
     <circle cx="12" cy="12.5" r="3.5" />
   </Svg>
 );
+
+export const HomeIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z" />
+  </Svg>
+);
+
+export const CompassIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="m15.5 8.5-2 5-5 2 2-5z" />
+  </Svg>
+);
+
+export const RecordsIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <rect x="5" y="3.5" width="14" height="17" rx="2.5" />
+    <path d="M8.5 8h7M8.5 12h7M8.5 16h4" />
+  </Svg>
+);
+
+export const ShieldIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M12 3.5 5 6v5.5c0 4.3 3 7.6 7 9 4-1.4 7-4.7 7-9V6z" />
+    <path d="m9 12 2 2 4-4" />
+  </Svg>
+);
+
+export const DropIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M12 3.5s-6 6.4-6 10.6a6 6 0 0 0 12 0C18 9.9 12 3.5 12 3.5" />
+    <path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5" />
+  </Svg>
+);
+
+export const ChartIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M4 4v16h16" />
+    <path d="m7.5 14.5 3.5-4 3 2.5 4.5-6" />
+  </Svg>
+);

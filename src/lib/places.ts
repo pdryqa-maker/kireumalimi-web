@@ -17,3 +17,6 @@ export const PLACES: Record<string, { name: string; x: number; y: number }> = {
 };
 
 export const DEFAULT_PLACE = "eonyang";
+
+// 시연 지역. 로그인하지 않은 이용자의 기본 지역이다. key는 고정 질문 데이터의 지역, area는 오피넷 지역코드다.
+export const DEMO_REGION = { key: "ulsan_ulju", area: "1831", name: "울주군" };
