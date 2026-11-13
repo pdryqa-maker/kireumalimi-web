@@ -12,6 +12,7 @@ export const LIMITS = {
   data: { max: 60, windowMs: 10 * MINUTE },
   cars: { max: 150, windowMs: 10 * MINUTE }, // 차종 검색은 글자를 칠 때마다 묻고 외부 API를 쓰지 않아 넉넉히 둔다
   opinetDaily: { max: 250, windowMs: DAY },
+  exDaily: { max: 500, windowMs: DAY }, // 도로공사 휴게소 가격(30분 캐시, 한 번에 3쪽)
 };
 
 export function take(name: string, key: string, limit: { max: number; windowMs: number }) {
