@@ -10,6 +10,7 @@ export const LIMITS = {
   chat: { max: 15, windowMs: 10 * MINUTE },
   chatDaily: { max: 200, windowMs: DAY },
   data: { max: 60, windowMs: 10 * MINUTE },
+  cars: { max: 150, windowMs: 10 * MINUTE }, // 차종 검색은 글자를 칠 때마다 묻고 외부 API를 쓰지 않아 넉넉히 둔다
   opinetDaily: { max: 250, windowMs: DAY },
 };
 

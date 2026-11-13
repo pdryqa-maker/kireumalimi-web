@@ -1,5 +1,6 @@
 // 챗봇이 쓸 주유소 조회 기능. 화면의 결과 카드와 나중에 붙일 AI 도구가 함께 쓴다.
 import { litersFill, type Fill } from "@/lib/fillAmount";
+import { DEFAULT_KMPL } from "@/lib/fuelEconomy";
 import { fetchOpinet, fetchOpinetTimed } from "@/lib/opinet";
 import { PLACES } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
@@ -299,7 +300,7 @@ export async function getStation(id: string) {
 }
 
 export const DEFAULT_LITERS = 40;
-export const DEFAULT_KMPL = 12;
+export { DEFAULT_KMPL };
 const RADIUS_M = 5000; // 오피넷 반경 조회의 최대값
 
 // 출발 위치: 울주군 읍면 키(PLACES) 또는 이용자 위치(이름과 KATEC 좌표).
