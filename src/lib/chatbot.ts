@@ -2,16 +2,20 @@
 // 답을 보내기 전에 서버가 답변 속 숫자를 도구 결과와 대조하고, 맞지 않으면 한 번 다시 쓰게 한 뒤 그래도 틀리면 막는다.
 import Anthropic from "@anthropic-ai/sdk";
 import data from "@/data/fixed_question.json";
+import { forecastNextFill, todayKst, weekday } from "@/lib/fillForecast";
+import { KEROSENE_APP } from "@/lib/kerosene";
 import { checkNumbers, collectAllowed } from "@/lib/numbers";
 import { PLACES } from "@/lib/places";
-import { FUEL_TAX_CUT, taxCutImpact } from "@/lib/policy";
+import { CAP_FUELS, FUEL_TAX_CUT, priceCapNotice, taxCutImpact } from "@/lib/policy";
 import { findByTotalCost, findCheapest, getStation, ULSAN_AREAS } from "@/lib/stations";
 
 const MODEL = "claude-opus-5-5";
 const MAX_ROUNDS = 6;
 const FIXED_REGION = "ulsan_ulju";
 
-const SYSTEM = `당신은 '기름알리미'의 주유 안내 챗봇입니다. 한국석유공사 오피넷 데이터와 정부가 발표한 연료 제도 값으로 울산 지역 주유소와 연료비를 안내합니다.
+const system = (today: string) => `오늘은 ${today}(${weekday(today)}요일)입니다.
+
+당신은 '기름알리미'의 주유 안내 챗봇입니다. 한국석유공사 오피넷 데이터와 정부가 발표한 연료 제도 값으로 울산 지역 주유소와 연료비를 안내합니다.
 
 지킬 것
 - 가격, 금액, 거리, 날짜, 시각 같은 숫자는 도구 결과에 있는 값을 그대로 옮겨 씁니다. 직접 더하거나 빼거나 반올림한 숫자, 기억이나 추측으로 만든 숫자는 쓰지 않습니다. 4,880원을 '약 5천 원'처럼 바꾸지 않습니다. 서버가 답변의 숫자를 도구 결과와 대조해 맞지 않으면 답을 보내지 않습니다.
@@ -19,10 +23,13 @@ const SYSTEM = `당신은 '기름알리미'의 주유 안내 챗봇입니다. �
 - 주유소 가격을 말할 때는 오피넷에 보고된 가격이라 현장 가격과 다를 수 있다고 짧게 덧붙입니다. 상세 정보를 조회했다면 기준 시각도 함께 말합니다.
 - 앞으로의 가격 예측이나 주유소의 의도 추정은 하지 않습니다. 다만 정부가 발표한 유류세 인하 종료일과 그때 내 주유량에서 더 드는 최대 금액은 예측이 아니라 발표된 값의 계산이므로 get_fuel_tax_change로 답하고, 금액 앞에 '최대'를 붙입니다.
 - 거리까지 따진 추천을 원하거나 '근처', '가까운', 읍면 이름(예: 언양, 범서)이 나오면 find_by_total_cost를 씁니다. 주유량을 말하지 않으면 40리터, 연비를 말하지 않으면 12km/L로 계산하고 그 가정과 직선거리라는 점을 밝힙니다.
+- 석유 최고가격 고시를 물으면 get_price_cap_notice로 답합니다. 최고가격은 정유사 공급가의 상한이지 주유소 판매가의 상한이 아니라는 점을 밝히고, 내 주유량에서 달라지는 금액에는 '최대'를 붙입니다.
+- 이용자가 지난 주유 날짜와 양을 말하며 다음 주유일을 물으면 estimate_next_fill로 계산합니다. '지난주 월요일' 같은 말은 오늘 날짜를 기준으로 YYYY-MM-DD로 바꿔 넣고, 기록이 두 번보다 적거나 양을 모르면 먼저 물어봅니다. 가격이 아니라 주유 간격을 셈한 것이라고 밝힙니다.
+- 등유 보일러 가구의 남은 기름, 등유 배달 주문, 어르신 안부 전화, 에너지바우처, 한파 대비는 같은 팀의 '${KEROSENE_APP.name}'(${KEROSENE_APP.url})이 맡습니다. 이런 질문에는 그곳을 안내하고 직접 답을 지어내지 않습니다. 실내등유 가격 조회는 여기서도 할 수 있습니다.
 - '1,750원 밑이면 알려 줘'처럼 가격 알림을 원하면 propose_price_alert로 조건을 제안합니다. 알림은 이용자가 화면에서 저장을 눌러야 만들어지므로 저장했다고 말하지 말고, 아래 카드에서 확인해 달라고 합니다.
 - 지역을 말하지 않으면 울주군 기준으로 조회하고, 울주군 기준이라고 밝힙니다.
 - 대화 기록에는 화면 카드로 보여 준 답이 요약으로 들어 있습니다. 이미 답한 질문에 다시 답하지 말고 마지막 질문에만 답합니다.
-- 울산 밖 지역이나 도구로 답할 수 없는 질문이면, 지금 안내할 수 있는 것(울산 최저가, 주유소 상세, 울주군 읍면 기준 거리까지 따진 추천, 유류세 인하 종료 시 최대 금액, 가격 알림 조건, 지난 최고가격 고시 뒤 울주군 가격 변화)을 알립니다.
+- 울산 밖 지역이나 도구로 답할 수 없는 질문이면, 지금 안내할 수 있는 것(울산 최저가, 주유소 상세, 울주군 읍면 기준 거리까지 따진 추천, 유류세 인하 종료 시 최대 금액, 최근 최고가격 고시 해설, 가격 알림 조건, 주유 기록으로 다음 주유일 계산, 지난 최고가격 고시 뒤 울주군 가격 변화)을 알립니다.
 - 존댓말로 5문장 안쪽으로 답합니다. 별표, 샵, 표 같은 마크다운 기호는 쓰지 않습니다. 여러 곳을 알려 줄 때는 줄을 바꿔 번호를 붙입니다.`;
 
 const FUELS = ["휘발유", "고급휘발유", "경유", "실내등유", "자동차부탄"];
@@ -97,6 +104,47 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: "get_price_cap_notice",
+    description:
+      "가장 최근 석유 최고가격 고시의 차수, 발표일, 적용일, 유종별 최고가격(원/L)과 직전 차수 대비 변화(changeWon), 그 변화가 지정한 주유량에서 만드는 최대 차이(maxDiffWon)를 돌려준다. 최고가격은 정유사 공급가의 상한이다.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        fuel: { type: "string", enum: CAP_FUELS, description: "유종" },
+        liters: { type: "integer", description: "주유량(리터). 말하지 않으면 40" },
+      },
+      required: ["fuel", "liters"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "estimate_next_fill",
+    description:
+      "이용자의 지난 주유 기록(날짜, 리터) 2~5개로 다음 주유 예상일(nextDate), 평균 주유 간격(avgGapDays), 보통 주유량(typicalLiters), 알림을 보낼 날(notifyOn: 예상일이 든 주의 월요일)을 돌려준다. 가격은 예측하지 않는다.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        records: {
+          type: "array",
+          description: "주유 기록. 오래된 것부터 아니어도 된다",
+          items: {
+            type: "object",
+            properties: {
+              date: { type: "string", description: "주유한 날짜 YYYY-MM-DD" },
+              liters: { type: "integer", description: "넣은 양(리터)" },
+            },
+            required: ["date", "liters"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["records"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "propose_price_alert",
     description:
       "'○원 밑이면 알려 줘' 같은 요청을 가격 알림 조건으로 만들어 이용자에게 확인을 받는다. 저장은 이용자가 화면에서 한다. 지정한 지역의 해당 유종 최저가가 기준 가격 이하가 되면 알리는 조건이다.",
@@ -152,6 +200,14 @@ async function runTool(name: string, input: Record<string, unknown>, proposals: 
       return findByTotalCost(String(input.fuel), String(input.place), Number(input.liters), Number(input.km_per_liter));
     case "get_fuel_tax_change":
       return taxCutImpact(String(input.fuel), Number(input.liters));
+    case "get_price_cap_notice":
+      return priceCapNotice(String(input.fuel), Number(input.liters));
+    case "estimate_next_fill": {
+      const records = Array.isArray(input.records) ? input.records : [];
+      return forecastNextFill(
+        records.map((record: { date?: unknown; liters?: unknown }) => ({ date: String(record.date), liters: Number(record.liters) })),
+      );
+    }
     case "propose_price_alert": {
       const fuel = String(input.fuel);
       const area = String(input.area);
@@ -181,7 +237,9 @@ const client = new Anthropic();
 export async function answer(history: ChatTurn[]): Promise<ChatAnswer> {
   const messages: Anthropic.Beta.BetaMessageParam[] = history.map((turn) => ({ ...turn }));
   // 대화에 이미 나온 숫자(이용자가 말한 주유량, 앞선 카드의 가격)와 이번 도구 결과의 숫자가 답변의 근거다.
-  const allowed = collectAllowed(history.map((turn) => turn.content));
+  const today = todayKst();
+  // 오늘 날짜도 근거로 둔다(예: '오늘 11월 13일 기준').
+  const allowed = collectAllowed([today, ...history.map((turn) => turn.content)]);
   const proposals: AlertProposal[] = [];
   let retried = false;
 
@@ -192,7 +250,7 @@ export async function answer(history: ChatTurn[]): Promise<ChatAnswer> {
       output_config: { effort: "low" },
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      system: SYSTEM,
+      system: system(today),
       tools: TOOLS,
       messages,
     });

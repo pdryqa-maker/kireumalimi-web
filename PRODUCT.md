@@ -18,8 +18,8 @@ web
 
 기름알리미 turns 한국석유공사 오피넷 data into a service that tells people before they run out and answers when they ask in plain words. It has two parts:
 
-- **등유 안심 (lead part, about 65–70% of the report and demo):** predicts when a household's heating kerosene runs out, an AI calls the elderly resident first and places the order with consent, and flags households that may be going without heat. Built by 김형준·목서환.
-- **주유 챗봇 (supporting part, about 25–30%):** drivers ask in plain Korean and get prices that come only from 오피넷 lookups, each with the time it was reported. Built by 지현민·배재원.
+- **등유 안심 (lead part, about 65–70% of the report and demo):** predicts when a household's heating kerosene runs out, an AI calls the elderly resident first and places the order with consent, and flags households that may be going without heat. Built by 김형준·목서환 as a separate app (github.com/mokseo42-oss/deungyu-alimi, https://deungyu-alimi.vercel.app). This site's `/kerosene` page links to it.
+- **주유 챗봇 (supporting part, about 25–30%):** drivers ask in plain Korean and get prices that come only from 오피넷 lookups, each with the time it was reported. Built by 지현민·배재원 in this repository.
 
 ## Positioning
 
@@ -28,7 +28,7 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 ## Operating Context
 
 - Demo region: 울산 울주군 (울산 is the 석유공사 headquarters city).
-- Demo is run locally and recorded on video; no public deployment in this phase. Deadline 2026-11-20.
+- Demo is recorded on video; the site is also publicly deployed at https://kireumalimi-web.vercel.app with call limits. Deadline 2026-11-20.
 - Team 유일무이(油一無二) of four, working in one repository: github.com/pdryqa-maker/kireumalimi-web.
 
 ## Capabilities and Constraints
@@ -36,7 +36,8 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 - Next.js 16 app router, Tailwind CSS 4, TypeScript.
 - Working now: 울산 최저가 lookup (`lowTop10`), station detail with 기준 시각 (`detailById`), the fixed question "지난 고시 뒤 우리 동네는?" from aggregated past-price data, and a Claude (Opus 5.5) chatbot that calls those lookups as tools.
 - Added 2026-11-13: 실질비용 ranking from a 울주군 읍면 start point (`aroundAll`, straight-line round trip), a 유류세 인하 alert preview combining 언제·어디서·얼마 (official values in `src/lib/policy.ts`: extended to 2027-01-31), price-alert conditions the AI proposes and the user saves in the browser, a server-side number check on AI answers, card summaries in chat history, and per-visitor call limits.
-- 등유 안심 screens are not built yet: household runout chart, AI phone call, seller order screen, local-government dashboard.
+- Added 2026-11-13 (second pass): a 최고가격 notice explainer shown right after each announcement (values in `src/lib/policy.ts` `PRICE_CAP`), 내 차 주유 예보 from 2–5 fill records (interval average, no price prediction; records kept in the browser), and links from `/kerosene` and the chatbot to 등유 안심.
+- Not built here on purpose: 화물차 보조금 단가, 면세유, and research-institute estimates (official values not verified, or not official); Kakao delivery (prototype shows message previews only); road distance (straight-line only).
 - API keys (오피넷, Claude) stay server-side in `.env.local`; the repository is public.
 - The Vercel deployment is public; `src/lib/rateLimit.ts` caps calls per visitor and per server instance.
 - 오피넷 general key is limited to 300 calls a day; chatbot answers take about 5–12 seconds.

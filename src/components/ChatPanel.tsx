@@ -1,27 +1,40 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AlertProposal } from "@/lib/chatbot";
+import type { FillForecast } from "@/lib/fillForecast";
+import { KEROSENE_APP } from "@/lib/kerosene";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
+import { priceCapNotice } from "@/lib/policy";
 import { addAlert, alertStore, parseAlerts, removeAlert, type SavedAlert } from "@/lib/savedAlerts";
+import { saveFills } from "@/lib/savedFills";
 import {
   AlertCard,
   AlertCheckCard,
+  CapCard,
+  capMessage,
   CostCard,
+  fuelLabel,
   TaxCard,
   type AlertCheck,
   type AlertStatus,
+  type CapNotice,
   type CostResult,
   type CostStation,
   type PriceRow,
   type TaxImpact,
 } from "./AnswerCards";
+import { FillLogCard, ForecastCard, forecastMessage } from "./FillCards";
 import { basis, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 
 const FUELS = ["휘발유", "경유"];
 const LITER_OPTIONS = [20, 30, 40, 50, 60];
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
+const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
+const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
+const KEROSENE_LINK = { name: KEROSENE_APP.name, href: "/kerosene" };
 // 서버가 받는 대화 한도(20턴, 한 턴 500자)에 맞춘다.
 const MAX_HISTORY = 19;
 const MAX_TURN_LENGTH = 500;
@@ -60,6 +73,9 @@ type Reply =
   | { from: "bot"; summary: string; tax: TaxImpact; taxCost: CostResult | null }
   | { from: "bot"; summary: string; alert: AlertProposal; status: AlertStatus; id: number }
   | { from: "bot"; summary: string; alertCheck: AlertCheck }
+  | { from: "bot"; summary: string; cap: CapNotice }
+  | { from: "bot"; summary: string; fillForm: true }
+  | { from: "bot"; summary: string; forecast: FillForecast; forecastCost: CostResult | null }
   | { from: "bot"; error: string; retry: () => void };
 type Message = { from: "user"; text: string } | Reply;
 type Turn = { role: "user" | "assistant"; content: string };
@@ -89,6 +105,22 @@ function taxSummary(tax: TaxImpact, cost: CostResult | null) {
   return (
     `유류세 인하는 ${tax.endsOn} 종료 예정(${tax.decidedOn} 연장 결정). 끝나면 ${tax.fuel} ${tax.liters}L에 최대 ${won(tax.maxExtraWon)}원 더 듦(리터당 ${tax.wonPerLiter}원).` +
     (best && cost ? ` ${cost.place} 출발 거리까지 따진 추천: ${best.name} 리터당 ${won(best.price)}원.` : "")
+  );
+}
+
+function capSummary(cap: CapNotice) {
+  const diff =
+    cap.maxDiffWon === null || cap.changeWon === 0
+      ? ""
+      : ` ${fuelLabel(cap.fuel)} ${cap.liters}L 기준 최대 ${won(cap.maxDiffWon)}원 차이.`;
+  return `${capMessage(cap)}${diff}`;
+}
+
+function forecastSummary(forecast: FillForecast, cost: CostResult | null) {
+  const records = forecast.records.map((record) => `${record.date} ${record.liters}L`).join(", ");
+  return (
+    `주유 기록(${records}) 기준 다음 주유 예상 ${forecast.nextDate}, 평균 ${forecast.avgGapDays}일 간격, 알림일 ${forecast.notifyOn}. ` +
+    forecastMessage(forecast, cost)
   );
 }
 
@@ -264,6 +296,39 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     });
   };
 
+  const askCap = () => {
+    const [chosenFuel, chosenLiters] = [fuel, liters];
+    ask(CAP_QUESTION, "text", async () => {
+      const result = priceCapNotice(chosenFuel, chosenLiters);
+      if (typeof result.error === "string") return { from: "bot", text: result.error };
+      const cap = result as CapNotice;
+      return { from: "bot", cap, summary: capSummary(cap) };
+    });
+  };
+
+  const askForecast = () =>
+    ask(FORECAST_QUESTION, "text", async () => ({
+      from: "bot",
+      fillForm: true,
+      summary: "주유 기록 입력 카드를 보여 줌. 이용자가 날짜와 리터를 넣고 계산을 누르면 다음 주유일을 알려 줌.",
+    }));
+
+  function submitForecast(forecast: FillForecast) {
+    const [chosenFuel, chosenPlace] = [fuel, place];
+    saveFills(forecast.records);
+    ask(`주유 기록 ${forecast.records.length}번으로 다음 주유일 계산해 줘`, "text", async () => {
+      const query = new URLSearchParams({
+        fuel: chosenFuel,
+        place: chosenPlace,
+        liters: String(Math.min(Math.max(forecast.typicalLiters, 1), 300)),
+      });
+      // 추천은 오피넷이 안 될 때 빼고 보여 준다. 예상일은 기록만으로 셈한 값이라 그대로 쓸 수 있다.
+      const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
+      const cost: CostResult | null = ok && body?.stations ? body : null;
+      return { from: "bot", forecast, forecastCost: cost, summary: forecastSummary(forecast, cost) };
+    });
+  }
+
   const checkAlert = (alert: AlertProposal) =>
     ask(`${alert.areaName} ${alert.fuel} ${won(alert.belowWon)}원 이하 알림, 지금 확인해 줘`, "list", async () => {
       const { ok, body } = await getJson(`/api/stations/cheapest?${new URLSearchParams({ fuel: alert.fuel, area: alert.area })}`);
@@ -326,13 +391,31 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   }
 
   const busy = pending !== null;
-  const suggestions = [
-    { label: `${region.name}에서 제일 싼 ${fuel} 어디야?`, onClick: askCheapest },
-    { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost },
-    { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax },
-    { label: fixedQuestion, onClick: askFixed },
-    { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
+  const groups = [
+    {
+      title: "가격 찾기",
+      items: [
+        { label: `${region.name}에서 제일 싼 ${fuel} 어디야?`, onClick: askCheapest },
+        { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost },
+      ],
+    },
+    {
+      title: "제도 변경",
+      items: [
+        { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax },
+        { label: CAP_QUESTION, onClick: askCap },
+        { label: fixedQuestion, onClick: askFixed },
+      ],
+    },
+    {
+      title: "내 알림",
+      items: [
+        { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
+        { label: FORECAST_QUESTION, onClick: askForecast },
+      ],
+    },
   ];
+  const suggestions = groups.flatMap((group) => group.items);
 
   return (
     <section
@@ -341,27 +424,39 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     >
       <div aria-live="polite" className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 pt-6 pb-4 sm:px-7">
         {messages.length === 0 && !busy && (
-          <div className="m-auto w-full max-w-lg py-4">
+          <div className="m-auto w-full max-w-xl py-4">
             <h1 className="text-center text-2xl font-bold tracking-tight text-balance sm:text-3xl">
               {region.name} 주유소, 말로 물어보세요
             </h1>
             <p className="mt-3 text-center leading-relaxed text-ink-soft text-balance">
               한국석유공사 오피넷에 보고된 가격으로 답하고, 거리와 내 주유량, 제도 변경까지 따져 드려요.
             </p>
-            <ul className="mt-7 space-y-3.5">
-              {suggestions.map((suggestion) => (
-                <li key={suggestion.label}>
-                  <button
-                    type="button"
-                    onClick={suggestion.onClick}
-                    className="w-full rounded-2xl px-5 py-3.5 text-left font-medium shadow-raised transition-shadow hover:shadow-raised-sm active:shadow-inset"
-                  >
-                    {suggestion.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {groups.map((group) => (
+              <section key={group.title} aria-label={group.title} className="mt-6">
+                <h2 className="px-1 text-sm font-semibold text-ink-soft">{group.title}</h2>
+                <ul className="mt-2.5 grid gap-3 sm:grid-cols-2">
+                  {group.items.map((suggestion) => (
+                    <li key={suggestion.label}>
+                      <button
+                        type="button"
+                        onClick={suggestion.onClick}
+                        className="h-full w-full rounded-2xl px-5 py-3.5 text-left font-medium shadow-raised transition-shadow hover:shadow-raised-sm active:shadow-inset"
+                      >
+                        {suggestion.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
             {saved.length > 0 && <SavedAlerts saved={saved} onCheck={checkAlert} />}
+            <p className="mt-7 text-center text-sm text-ink-soft">
+              어르신 댁 등유 보일러가 걱정되면{" "}
+              <Link href="/kerosene" className="font-semibold text-ink underline underline-offset-4">
+                {KEROSENE_APP.name}
+              </Link>
+              에서 도와드려요.
+            </p>
           </div>
         )}
 
@@ -375,6 +470,15 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
                 {message.text}
               </p>
             );
+          }
+          if ("cap" in message) {
+            return <CapCard key={index} cap={message.cap} kerosene={KEROSENE_LINK} busy={busy} onPastNotice={askFixed} />;
+          }
+          if ("fillForm" in message) {
+            return <FillLogCard key={index} busy={busy} onSubmit={submitForecast} />;
+          }
+          if ("forecast" in message) {
+            return <ForecastCard key={index} forecast={message.forecast} cost={message.forecastCost} />;
           }
           if ("tax" in message) {
             return <TaxCard key={index} tax={message.tax} cost={message.taxCost} />;
@@ -589,7 +693,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
                 type="button"
                 onClick={suggestion.onClick}
                 disabled={busy}
-                className="shrink-0 rounded-full px-3.5 py-2 text-sm whitespace-nowrap shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:opacity-50"
+                className="shrink-0 rounded-full px-3 py-1.5 text-sm whitespace-nowrap shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:opacity-50"
               >
                 {suggestion.label}
               </button>

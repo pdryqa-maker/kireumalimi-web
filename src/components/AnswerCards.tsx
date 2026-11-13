@@ -1,12 +1,13 @@
 // 실질비용, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
 import type { AlertProposal } from "@/lib/chatbot";
-import type { taxCutImpact } from "@/lib/policy";
+import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
 import type { findByTotalCost } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
 
 export type CostResult = Awaited<ReturnType<typeof findByTotalCost>>;
 export type CostStation = CostResult["stations"][number];
 export type TaxImpact = Exclude<ReturnType<typeof taxCutImpact>, { error: string }>;
+export type CapNotice = Exclude<ReturnType<typeof priceCapNotice>, { error: string }>;
 export type AlertStatus = "proposed" | "saved" | "unsaved" | "dismissed";
 export type PriceRow = { id: string; name: string; brand: string; price: number };
 export type AlertCheck = AlertProposal & { fetchedAt: string; matches: PriceRow[]; lowest: PriceRow | null };
@@ -123,6 +124,94 @@ export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null
       </figure>
       <p className="mt-3 text-xs text-ink-soft">
         출처: {tax.source}. 판매가가 한 번에 오르지 않을 수 있어 최대값이에요. 정부가 다시 연장하면 바뀌어요.
+      </p>
+    </div>
+  );
+}
+
+// 화면에는 실내등유를 등유로 줄여 쓴다.
+export const fuelLabel = (fuel: string) => (fuel === "실내등유" ? "등유" : fuel);
+
+function changeText(changeWon: number | null, previousRound: number | null) {
+  if (changeWon === null || previousRound === null) return "직전 차수 없음";
+  if (changeWon === 0) return `${previousRound}차와 같음`;
+  return `${previousRound}차보다 ${won(Math.abs(changeWon))}원 ${changeWon < 0 ? "인하" : "인상"}`;
+}
+
+export function capMessage(cap: CapNotice) {
+  const rows = cap.fuels
+    .map((item) => `${fuelLabel(item.fuel)} ${won(item.capWon)}원(${changeText(item.changeWon, cap.previousRound)})`)
+    .join(", ");
+  return `${cap.round}차 석유 최고가격이 ${monthDay(cap.startsOn)}부터 적용돼요. ${rows}. 정유사 공급가의 상한이라, 주유소 판매가는 따로 정해져요.`;
+}
+
+export function CapCard({
+  cap,
+  kerosene,
+  onPastNotice,
+  busy,
+}: {
+  cap: CapNotice;
+  kerosene: { name: string; href: string };
+  onPastNotice: () => void;
+  busy: boolean;
+}) {
+  const change = cap.changeWon;
+  return (
+    <div className={CARD}>
+      <CardHead title={`제도 변경 해설 · ${cap.round}차 석유 최고가격`} />
+      <p className="mt-3 text-sm text-ink-soft">
+        {monthDay(cap.announcedOn)} 발표 · {monthDay(cap.startsOn)}부터 적용
+      </p>
+      <dl className="mt-3 grid grid-cols-3 gap-3">
+        {cap.fuels.map((item) => (
+          <div key={item.fuel} className={`rounded-2xl px-3 py-3 shadow-inset-sm ${item.fuel === cap.fuel ? "ring-2 ring-accent" : ""}`}>
+            <dt className="text-xs text-ink-soft">{fuelLabel(item.fuel)}</dt>
+            <dd className="mt-1 text-lg font-bold whitespace-nowrap tabular-nums sm:text-xl">
+              {won(item.capWon)}
+              <span className="ml-0.5 text-sm font-medium">원</span>
+            </dd>
+            <dd className="text-xs text-ink-soft tabular-nums">{changeText(item.changeWon, cap.previousRound)}</dd>
+          </div>
+        ))}
+      </dl>
+      <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-[15px] leading-relaxed marker:text-ink-soft">
+        <li>최고가격은 정유사가 주유소에 넘기는 공급가의 상한이에요. 주유소 판매가의 상한은 아니에요.</li>
+        <li>
+          {change === null
+            ? `${fuelLabel(cap.fuel)} 상한을 비교할 직전 차수 정보가 없어요.`
+            : change === 0
+              ? `${fuelLabel(cap.fuel)} 상한은 ${cap.previousRound}차와 같아요. 이번 고시로 공급가 상한이 바뀌지 않았어요.`
+              : `${fuelLabel(cap.fuel)} 상한이 리터당 ${won(Math.abs(change))}원 ${change < 0 ? "내려" : "올라"}, ${cap.liters}L면 최대 ${won(cap.maxDiffWon ?? 0)}원 차이가 나요.`}
+        </li>
+        <li>판매가에 언제 얼마나 반영될지는 주유소마다 달라요. 지난 고시 때 우리 동네가 어떻게 움직였는지 볼 수 있어요.</li>
+      </ol>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={onPastNotice}
+          disabled={busy}
+          className="rounded-full px-4 py-2 text-sm font-semibold shadow-raised-sm active:shadow-inset-sm disabled:opacity-50"
+        >
+          지난 고시 뒤 우리 동네는?
+        </button>
+        <a
+          href={kerosene.href}
+          className="rounded-full px-4 py-2 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm"
+        >
+          등유 가구 안내는 {kerosene.name}
+        </a>
+      </div>
+      <figure className="mt-4">
+        <figcaption className="text-xs text-ink-soft">
+          실제 서비스는 발표 직후 카카오톡으로 이렇게 보내요. 시제품은 보내지 않아요.
+        </figcaption>
+        <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
+          {capMessage(cap)}
+        </blockquote>
+      </figure>
+      <p className="mt-3 text-xs text-ink-soft">
+        출처: {cap.source}({cap.checkedOn} 확인). 앞으로의 판매가를 예측한 값이 아니에요.
       </p>
     </div>
   );

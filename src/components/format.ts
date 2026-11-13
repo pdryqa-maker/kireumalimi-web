@@ -39,3 +39,10 @@ export function longDate(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   return `${year}년 ${month}월 ${day}일`;
 }
+
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+// "2026-11-20" → "11월 20일(목)"
+export function dayWithWeekday(date: string) {
+  return `${monthDay(date)}(${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
+}
