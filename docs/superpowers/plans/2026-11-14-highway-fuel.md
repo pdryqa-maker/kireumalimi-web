@@ -41,7 +41,7 @@
 
 **Interfaces:**
 - Consumes: Task 1 표, `toKatec`(katec.ts), `findNearby`, `Origin`, `kstTime`(stations.ts).
-- Produces: `HIGHWAY_FUELS`, `HIGHWAY_ROUTES: string[]`, `class HighwayError`, `highwayStations(fuel: string, route: string, direction: string, origin: Origin | null, liters: number)` → `{ route, direction, fuel, from, onRoute, fetchedAtKst, ahead[], remaining, cheapest, average, unlocated[], beforeBoarding, note }`.
+- Produces: `HIGHWAY_FUELS`, `HIGHWAY_ROUTES: string[]`, `class HighwayError`, `highwayStations(fuel: string, route: string, direction: string, origin: Origin | null, liters: number | null)` → `{ route, direction, fuel, from, onRoute, fetchedAtKst, ahead[], remaining, cheapest, average, unlocated[], beforeBoarding, note }`.
 
 - [ ] 테스트: 경부선 서울 방향, 언양 출발 → ahead 첫 곳 언양(서울), 다음 5곳, cheapest 황간(서울) 1819, average는 가격 있는 앞쪽 평균, beforeBoarding.vsAverageWon = 평균 − 근처 최저가, savingWon = round(차이 × liters), message "타기 전에 넣으면 더 아낄 수 있습니다.".
 - [ ] 테스트: Review Focus 다섯 가지.
@@ -52,7 +52,7 @@
 
 **Files:** Modify `src/lib/chatbot.ts`, `src/lib/briefing.ts`(priceStory), `src/components/ChatPanel.tsx`(탐색 탭 칩), `.env.example`, `README.md`, `PRODUCT.md`, `DESIGN.md`
 
-- [ ] 도구 `find_highway_stations {fuel, route(enum HIGHWAY_ROUTES), direction, place(enum none + 출발지), liters}`, 규칙 한 줄, 안내 가능 목록에 추가. HighwayError·RangeError 메시지는 기존처럼 도구 오류로 돌려준다.
+- [ ] 도구 `find_highway_stations {fuel, route(enum HIGHWAY_ROUTES), direction, place(enum none + 출발지), fill, value}(주유량은 다른 도구와 같은 금액·가득·리터)`, 규칙 한 줄, 안내 가능 목록에 추가. HighwayError·RangeError 메시지는 기존처럼 도구 오류로 돌려준다.
 - [ ] priceStory 결과에 `lagNote`(Global Constraints 문장)를 넣고, 규칙에 "답 끝에 lagNote를 한 번 붙이고, 국제유가를 더 물으면 오피넷 국제유가 메뉴를 안내"를 넣는다. 기존 "국제유가는 말하지 않는다"는 lagNote 밖의 원인에 한정.
 - [ ] 탐색 탭 칩 "언양에서 서울 가는 길, 휴게소 어디서 넣을까?".
 - [ ] 가짜 Claude 응답으로 도구 호출이 이어지는지 확인, `tsc`, `eslint`, `npm run build`.
