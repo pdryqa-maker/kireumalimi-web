@@ -410,7 +410,7 @@ export default function AlertsManager() {
 
       <div className="mt-10 flex flex-wrap gap-3">
         <Link href="/" className="rounded-full px-5 py-2.5 text-ink-soft shadow-raised-sm active:shadow-inset-sm">
-          주유 챗봇으로 돌아가기
+          홈으로 돌아가기
         </Link>
       </div>
     </div>
