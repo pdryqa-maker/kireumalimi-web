@@ -22,7 +22,7 @@ http://localhost:3000 에서 확인합니다.
 
 | 화면 | 담당 | 위치 |
 |---|---|---|
-| 첫 화면, 공통 머리글·바닥글 | 공통 | `src/app/page.tsx`, `src/app/layout.tsx` |
+| 첫 화면, 화면 틀(왼쪽 메뉴·아래 탭·머리글) | 공통, 배재원 | `src/app/page.tsx`, `src/app/layout.tsx`, `src/components/AppShell.tsx` |
 | 등유 안심 | 김형준, 목서환 | `src/app/kerosene/` |
 | 주유 챗봇 | 지현민, 배재원 | `src/app/chat/`, `src/components/ChatPanel.tsx` |
 | 고정 질문 API | 지현민 | `src/app/api/fixed-question/` |
@@ -35,6 +35,9 @@ http://localhost:3000 에서 확인합니다.
 | 최고가격 고시 해설(발표 직후 해설) | 배재원 | `src/lib/policy.ts`의 `PRICE_CAP`, `src/components/AnswerCards.tsx`의 `CapCard` |
 | 내 차 주유 예보(주유 기록으로 다음 주유일) | 배재원 | `src/lib/fillForecast.ts`, `src/components/FillCards.tsx` |
 | 등유 안심 연결 | 배재원 | `src/lib/kerosene.ts`, `src/app/kerosene/` |
+| 간편 로그인·내 정보(이름, 위치, 차) | 배재원 | `src/lib/profile.ts`, `src/components/LoginForm.tsx`, `src/app/login/` |
+| 내 위치 조회(전국, 휴대폰 위치 → 오피넷 좌표) | 배재원 | `src/lib/katec.ts`, `src/lib/origin.ts`, `src/lib/stations.ts`의 `findNearby`·`areaList`, `src/app/api/stations/nearby/`, `src/app/api/areas/` |
+| 내 알림 조건(조건을 걸어 두고 맞을 때 알림) | 배재원 | `src/lib/conditions.ts`, `src/lib/watchSettings.ts`, `src/components/AlertsManager.tsx`, `src/app/alerts/` |
 | 숫자 대조(AI 답변 속 숫자 검사) | 배재원 | `src/lib/numbers.ts` |
 | 호출 제한 | 배재원 | `src/lib/rateLimit.ts` |
 
@@ -45,7 +48,11 @@ http://localhost:3000 에서 확인합니다.
 ```text
 /api/opinet/avgAllPrice
 /api/opinet/lowTop10?prodcd=B027&area=01&cnt=5
+/api/stations/nearby?fuel=경유&x=502200&y=330100&label=집
+/api/areas?sido=18
 ```
+
+지역코드(`areaCode`)는 거의 바뀌지 않아 하루 동안 재사용합니다.
 
 쓸 수 있는 API는 `route.ts`의 `ALLOWED_ENDPOINTS`에 있습니다. 필요한 API가 없으면 여기에 추가합니다.
 
@@ -58,6 +65,9 @@ http://localhost:3000 에서 확인합니다.
 - **최고가격 고시 해설**: 최고가격은 정해진 종료일이 없어 미리 알리지 않고, 발표 직후 차수·적용일·유종별 상한과 직전 차수 대비 변화를 쉬운 말로 풀어 줍니다. 공급가 상한이지 판매가 상한이 아니라는 점을 함께 밝힙니다.
 - **내 차 주유 예보**: 주유 기록(날짜, 리터) 2~5개의 간격 평균으로 다음 주유 예상일을 셈하고, 그 주 월요일 아침에 한 번 보낼 알림(거리까지 따진 추천 포함)을 미리 보여 줍니다. 가격은 예측하지 않습니다. 기록은 이 브라우저에만 저장합니다.
 - **등유 안심 연결**: 등유 보일러 가구(소진 예측, AI 전화, 판매소, 군 현황판)는 같은 팀의 [등유 안심](https://deungyu-alimi.vercel.app)이 맡습니다. `/kerosene`에서 그 화면으로 이어 주고, 챗봇도 등유 배달·바우처·한파 질문은 등유 안심으로 안내합니다.
+- **간편 로그인과 개인화**: 부를 이름, 내 위치, 내 차(유종, 한 번에 넣는 양, 연비)를 받아 이 브라우저에만 저장합니다. 비밀번호는 받지 않습니다(실제 서비스는 카카오 로그인으로 제안). 로그인하면 첫 화면 인사와 추천 질문, 출발 위치, 유종·주유량이 내 정보로 바뀌고, 자유 질문 때 서버가 내 정보를 다시 검사해 AI 지시문에 넣습니다. 정확한 좌표는 AI에 보내지 않고 주유소 조회에만 씁니다.
+- **내 위치(전국)**: 휴대폰 위치(위경도)를 오피넷 좌표(KATEC)로 바꿔 반경 5km 조회를 합니다. 위치는 100m 단위로 줄여 저장합니다. 위치를 쓰지 않으면 오피넷 지역코드로 시도·시군구를 골라 그 지역 최저가를 봅니다.
+- **내 알림 조건**(`/alerts`): 가격(지역·유종·기준 가격), 최고가격 새 고시 발표 직후, 유류세 인하 종료 7일 전, 내 차 주유 예보를 걸어 두면 받게 될 알림과 보낼 때를 미리 보여 줍니다. 밤 9시~아침 8시에는 보내지 않고, 같은 알림은 한 번만, 하루 2건까지입니다. 지금은 보내지 않고 미리보기만 합니다.
 - **대화 기록**: 버튼으로 받은 카드 답도 요약으로 대화 기록에 넣어, 자유 질문 때 AI가 앞 질문에 다시 답하지 않습니다.
 
 ## 오피넷에 없는 값
@@ -73,7 +83,7 @@ http://localhost:3000 에서 확인합니다.
 | 대상 | 한도 |
 |---|---|
 | AI 자유 질문 | 한 사람(IP)당 10분에 15회, 서버 인스턴스당 하루 200회 |
-| 조회 경로(`/api/stations/*`, `/api/alert-preview`, `/api/opinet/*`) | 한 사람당 10분에 60회 |
+| 조회 경로(`/api/stations/*`, `/api/areas`, `/api/alert-preview`, `/api/opinet/*`) | 한 사람당 10분에 60회 |
 | 오피넷 실제 호출(캐시 제외) | 서버 인스턴스당 하루 250회 |
 
 서버 메모리에 세므로 Vercel 인스턴스마다 따로 셉니다. 정확한 전체 제한이 필요하면 공유 저장소(KV 등)로 옮겨야 합니다.
@@ -82,7 +92,7 @@ http://localhost:3000 에서 확인합니다.
 
 - 인증키는 `.env.local`에만 둡니다. 코드, 채팅, 공유 폴더에 넣지 않습니다.
 - 일반 키는 하루 300회까지입니다. 같은 요청은 10분간 재사용하고, 위의 호출 제한이 걸려 있습니다.
-- 화면에는 "한국석유공사 오피넷 제공"과 "공공데이터 활용 시제품"을 유지합니다. 오피넷이나 공사의 로고와 디자인을 흉내 내지 않습니다.
+- 화면에는 "유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용"을 유지합니다. 한국석유공사 로고는 서포터즈 활동 표시로 공사 원본 파일을 그대로 쓰고, 오피넷 화면이나 로고는 흉내 내지 않습니다(2026-11-13 배재원 요청으로 바꿈, 팀 확인 필요).
 
 ## 고정 질문 데이터
 

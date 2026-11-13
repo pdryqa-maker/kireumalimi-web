@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { answer, type ChatTurn } from "@/lib/chatbot";
+import { cleanProfile } from "@/lib/profile";
 import { limitByClient, limitDaily } from "@/lib/rateLimit";
 
 const MAX_TURNS = 20;
@@ -34,7 +35,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    return Response.json(await answer(body.messages));
+    // 내 정보는 브라우저가 보낸 값이라 서버에서 다시 검사해 쓴다.
+    return Response.json(await answer(body.messages, cleanProfile(body.profile)));
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
       return Response.json({ error: "Claude API 키를 확인해 주세요." }, { status: 500 });

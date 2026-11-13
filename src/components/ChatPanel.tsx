@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AlertProposal } from "@/lib/chatbot";
-import type { FillForecast } from "@/lib/fillForecast";
+import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
+import { addDays, type FillForecast } from "@/lib/fillForecast";
 import { KEROSENE_APP } from "@/lib/kerosene";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
-import { addAlert, alertStore, parseAlerts, removeAlert, type SavedAlert } from "@/lib/savedAlerts";
-import { saveFills } from "@/lib/savedFills";
+import { fuelName, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
+import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
+import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
+import { parseWatch, watchStore } from "@/lib/watchSettings";
 import {
   AlertCard,
   AlertCheckCard,
@@ -26,10 +29,13 @@ import {
   type TaxImpact,
 } from "./AnswerCards";
 import { FillLogCard, ForecastCard, forecastMessage } from "./FillCards";
-import { basis, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
+import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
+import { CalendarIcon, CarIcon, PinIcon, ReceiptIcon, RouteIcon } from "./icons";
+import { useMounted, useProfile, useStored } from "./useStored";
 
-const FUELS = ["휘발유", "경유"];
+const FUELS = PROFILE_FUELS;
 const LITER_OPTIONS = [20, 30, 40, 50, 60];
+const MY = "my";
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
 const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
@@ -42,7 +48,7 @@ const MAX_TURN_LENGTH = 500;
 let alertSeq = 0;
 
 type Region = { key: string; area: string; name: string };
-type Station = { id: string; name: string; brand: string; price: number; address: string };
+type Station = { id: string; name: string; brand: string; price: number; address?: string; distanceKm?: number };
 type StationDetail = {
   name: string;
   brand: string;
@@ -158,6 +164,31 @@ function toTurns(messages: Message[]) {
     .map((turn) => ({ ...turn, content: turn.content.slice(0, MAX_TURN_LENGTH) }));
 }
 
+// 시간대 인사(한국 시간)
+function greeting(hour: number) {
+  if (hour >= 5 && hour < 11) return "좋은 아침이에요";
+  if (hour >= 11 && hour < 17) return "좋은 오후예요";
+  if (hour >= 17 && hour < 22) return "좋은 저녁이에요";
+  return "늦은 시간이에요";
+}
+
+// 다음에 받을 알림 한 줄. 내 알림 조건에 켜 둔 제도·예보 조건으로 셈한다.
+function nextNotice(profile: Profile) {
+  const watch = parseWatch(watchStore.read());
+  const notices = buildNotices({
+    watch,
+    car: { fuel: profile.fuel, liters: profile.liters },
+    alerts: parseAlerts(alertStore.read()),
+    checks: {},
+    fills: parseFills(fillStore.read()),
+  });
+  const first = scheduleNotices(notices)[0];
+  if (!first) return notices.length > 0 ? "조건을 기다리는 중" : "조건 없음";
+  const { today } = kstClock();
+  const when = first.now ? "지금" : first.sendOn === today ? "오늘" : first.sendOn === addDays(today, 1) ? "내일" : dayWithWeekday(first.sendOn);
+  return `${when} · ${first.title}`;
+}
+
 function SendIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -204,19 +235,36 @@ const SELECT =
   "appearance-none rounded-full bg-ground py-1.5 pr-8 pl-3.5 text-sm font-semibold shadow-inset-sm focus-visible:outline-offset-1";
 
 export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: string; region: Region }) {
-  const [fuel, setFuel] = useState(FUELS[0]);
-  const [place, setPlace] = useState(DEFAULT_PLACE);
-  const [liters, setLiters] = useState(40);
+  const profile = useProfile();
+  const mounted = useMounted();
+  // 화면에서 고른 값이 있으면 그 값, 없으면 내 정보(로그인 전에는 기본값)를 쓴다.
+  const [fuelChoice, setFuel] = useState<string | null>(null);
+  const [placeChoice, setPlace] = useState<string | null>(null);
+  const [litersChoice, setLiters] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState<SkeletonKind | null>(null);
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
-  const savedRaw = useSyncExternalStore(alertStore.subscribe, alertStore.getSnapshot, alertStore.getServerSnapshot);
-  const saved = useMemo(() => parseAlerts(savedRaw), [savedRaw]);
-  const placeName = PLACES[place].name;
+  useStored(alertStore, parseAlerts);
+  useStored(watchStore, parseWatch);
+  useStored(fillStore, parseFills);
+  const fuel = fuelChoice ?? profile.fuel;
+  const liters = litersChoice ?? profile.liters;
+  const place = placeChoice === MY && !profile.location ? DEFAULT_PLACE : (placeChoice ?? (profile.location ? MY : DEFAULT_PLACE));
+  const placeName = place === MY && profile.location ? profile.location.label : PLACES[place].name;
+  const homeArea = profile.area ?? { code: region.area, name: region.name };
+  const loggedIn = mounted && signedIn(profile);
+  const literOptions = [...new Set([...LITER_OPTIONS, liters])].sort((a, b) => a - b);
+
+  // 출발 위치 조회 값: 내 위치면 좌표와 이름, 아니면 읍면 키
+  const originQuery = (chosen: string): Record<string, string> =>
+    chosen === MY && profile.location
+      ? { x: String(profile.location.x), y: String(profile.location.y), label: profile.location.label }
+      : { place: chosen === MY ? DEFAULT_PLACE : chosen };
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // 첫 화면에서는 인사말이 보이도록 대화가 시작된 뒤에만 아래로 내린다.
+    if (messages.length > 0 || pending) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
 
   async function run(kind: SkeletonKind, answer: () => Promise<Reply | Reply[] | null>) {
@@ -236,13 +284,23 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     run(kind, answer);
   }
 
+  const cheapestQuestion = profile.location
+    ? `${profile.location.label} 근처 제일 싼 ${fuelName(fuel)} 어디야?`
+    : `${homeArea.name}에서 제일 싼 ${fuelName(fuel)} 어디야?`;
+
   const askCheapest = () => {
     const chosen = fuel;
-    ask(`${region.name}에서 제일 싼 ${chosen} 어디야?`, "list", async () => {
-      const { ok, body } = await getJson(`/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: region.area })}`);
-      if (!ok || !body) return null;
-      if (body.stations.length === 0) return { from: "bot", text: "조회된 주유소가 없어요." };
-      const title = `${body.area} ${chosen} 최저가`;
+    const near = profile.location;
+    ask(cheapestQuestion, "list", async () => {
+      const url = near
+        ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(MY) })}`
+        : `/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: homeArea.code })}`;
+      const { ok, body } = await getJson(url);
+      if (!ok || !body) return body?.error ? { from: "bot", text: body.error } : null;
+      if (body.stations.length === 0) {
+        return { from: "bot", text: near ? `${body.place} 반경 ${body.radiusKm}km 안에서 가격을 알린 주유소가 없어요.` : "조회된 주유소가 없어요." };
+      }
+      const title = near ? `${body.place} 반경 ${body.radiusKm}km ${fuelName(chosen)} 최저가` : `${body.area} ${fuelName(chosen)} 최저가`;
       return {
         from: "bot",
         title,
@@ -265,8 +323,13 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
 
   const askTotalCost = () => {
     const [chosenFuel, chosenPlace, chosenLiters] = [fuel, place, liters];
-    ask(`${PLACES[chosenPlace].name}에서 거리까지 따지면 ${chosenFuel} 어디가 나아?`, "list", async () => {
-      const query = new URLSearchParams({ fuel: chosenFuel, place: chosenPlace, liters: String(chosenLiters) });
+    ask(`${placeName}에서 거리까지 따지면 ${fuelName(chosenFuel)} 어디가 나아?`, "list", async () => {
+      const query = new URLSearchParams({
+        fuel: chosenFuel,
+        ...originQuery(chosenPlace),
+        liters: String(chosenLiters),
+        kmpl: String(profile.kmpl),
+      });
       const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
       if (!ok || !body) return null;
       if (body.stations.length === 0) {
@@ -278,10 +341,15 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
 
   const askTax = () => {
     const [chosenFuel, chosenPlace, chosenLiters] = [fuel, place, liters];
-    ask(`유류세 인하 끝나면 ${chosenFuel} ${chosenLiters}L에 얼마 더 들어?`, "text", async () => {
-      const query = new URLSearchParams({ fuel: chosenFuel, place: chosenPlace, liters: String(chosenLiters) });
+    ask(`유류세 인하 끝나면 ${fuelName(chosenFuel)} ${chosenLiters}L에 얼마 더 들어?`, "text", async () => {
+      const query = new URLSearchParams({
+        fuel: chosenFuel,
+        ...originQuery(chosenPlace),
+        liters: String(chosenLiters),
+        kmpl: String(profile.kmpl),
+      });
       const { ok, body } = await getJson(`/api/alert-preview?${query}`);
-      if (!ok || !body?.tax) return null;
+      if (!ok || !body?.tax) return body?.error ? { from: "bot", text: body.error } : null;
       return { from: "bot", tax: body.tax, taxCost: body.cost, summary: taxSummary(body.tax, body.cost) };
     });
   };
@@ -319,8 +387,9 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     ask(`주유 기록 ${forecast.records.length}번으로 다음 주유일 계산해 줘`, "text", async () => {
       const query = new URLSearchParams({
         fuel: chosenFuel,
-        place: chosenPlace,
+        ...originQuery(chosenPlace),
         liters: String(Math.min(Math.max(forecast.typicalLiters, 1), 300)),
+        kmpl: String(profile.kmpl),
       });
       // 추천은 오피넷이 안 될 때 빼고 보여 준다. 예상일은 기록만으로 셈한 값이라 그대로 쓸 수 있다.
       const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
@@ -365,7 +434,8 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
       const { ok, body } = await getJson("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        // 내 정보(이름, 위치, 차)는 서버가 다시 검사해 답을 맞추는 데만 쓴다.
+        body: JSON.stringify({ messages: history, profile: loggedIn ? profile : undefined }),
       });
       if (!ok || !body?.text) return body?.error ? { from: "bot", text: body.error } : null;
       const replies: Reply[] = [{ from: "bot", text: body.text, check: body.check ?? undefined }];
@@ -391,66 +461,95 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   }
 
   const busy = pending !== null;
-  const groups = [
-    {
-      title: "가격 찾기",
-      items: [
-        { label: `${region.name}에서 제일 싼 ${fuel} 어디야?`, onClick: askCheapest },
-        { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost },
-      ],
-    },
-    {
-      title: "제도 변경",
-      items: [
-        { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax },
-        { label: CAP_QUESTION, onClick: askCap },
-        { label: fixedQuestion, onClick: askFixed },
-      ],
-    },
-    {
-      title: "내 알림",
-      items: [
-        { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
-        { label: FORECAST_QUESTION, onClick: askForecast },
-      ],
-    },
+  const cards = [
+    { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
+    { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost, Icon: RouteIcon },
+    { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
+    { label: FORECAST_QUESTION, onClick: askForecast, Icon: CalendarIcon },
   ];
-  const suggestions = groups.flatMap((group) => group.items);
+  const chips = [
+    { label: CAP_QUESTION, onClick: askCap },
+    { label: fixedQuestion, onClick: askFixed },
+    { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
+  ];
+  const suggestions = [...cards, ...chips];
+  const summary = loggedIn
+    ? [
+        { label: "내 위치", value: profile.location?.label ?? profile.area?.name ?? "넣지 않음", href: "/login", Icon: PinIcon },
+        { label: "내 차", value: `${fuelName(profile.fuel)} ${profile.liters}L`, href: "/login", Icon: CarIcon },
+        { label: "다음 알림", value: nextNotice(profile), href: "/alerts", Icon: CalendarIcon },
+      ]
+    : [];
 
   return (
-    <section
-      aria-label="주유 챗봇"
-      className="flex h-[calc(100dvh-8.5rem)] min-h-[32rem] flex-col rounded-[2rem] bg-ground shadow-raised"
-    >
-      <div aria-live="polite" className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 pt-6 pb-4 sm:px-7">
+    <section aria-label="주유 챗봇" className="flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]">
+      <div aria-live="polite" className="flex flex-1 flex-col gap-5 overflow-y-auto pt-4 pb-4">
         {messages.length === 0 && !busy && (
-          <div className="m-auto w-full max-w-xl py-4">
-            <h1 className="text-center text-2xl font-bold tracking-tight text-balance sm:text-3xl">
-              {region.name} 주유소, 말로 물어보세요
-            </h1>
-            <p className="mt-3 text-center leading-relaxed text-ink-soft text-balance">
-              한국석유공사 오피넷에 보고된 가격으로 답하고, 거리와 내 주유량, 제도 변경까지 따져 드려요.
-            </p>
-            {groups.map((group) => (
-              <section key={group.title} aria-label={group.title} className="mt-6">
-                <h2 className="px-1 text-sm font-semibold text-ink-soft">{group.title}</h2>
-                <ul className="mt-2.5 grid gap-3 sm:grid-cols-2">
-                  {group.items.map((suggestion) => (
-                    <li key={suggestion.label}>
-                      <button
-                        type="button"
-                        onClick={suggestion.onClick}
-                        className="h-full w-full rounded-2xl px-5 py-3.5 text-left font-medium shadow-raised transition-shadow hover:shadow-raised-sm active:shadow-inset"
-                      >
-                        {suggestion.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-            {saved.length > 0 && <SavedAlerts saved={saved} onCheck={checkAlert} />}
-            <p className="mt-7 text-center text-sm text-ink-soft">
+          <div className="m-auto w-full max-w-2xl py-4">
+            <div className="flex flex-col items-center text-center">
+              <span aria-hidden="true" className="flame-orb flame-orb-glow size-16 sm:size-[4.5rem]" />
+              <p className="mt-5 text-lg text-ink-soft">
+                {mounted ? greeting(kstClock().hour) : "반가워요"}
+                {loggedIn ? `, ${profile.name}님` : ""}
+              </p>
+              <h1 className="mt-1 text-[1.75rem] leading-tight font-bold tracking-tight text-balance sm:text-4xl">
+                오늘은 어디서 넣을까요?
+              </h1>
+            </div>
+
+            {loggedIn ? (
+              <dl className="mt-7 grid grid-cols-3 divide-x divide-hairline rounded-2xl shadow-raised-sm">
+                {summary.map(({ label, value, href, Icon }) => (
+                  <Link key={label} href={href} className="min-w-0 px-3 py-3 first:rounded-l-2xl last:rounded-r-2xl hover:bg-canvas sm:px-4">
+                    <dt className="flex items-center gap-1.5 text-xs text-ink-soft">
+                      <Icon className="size-3.5 shrink-0 text-flame" />
+                      {label}
+                    </dt>
+                    <dd className="mt-1 truncate text-sm font-semibold">{value}</dd>
+                  </Link>
+                ))}
+              </dl>
+            ) : (
+              <div className="mt-7 flex flex-wrap items-center gap-3 rounded-2xl bg-flame-soft px-4 py-3.5">
+                <p className="min-w-0 flex-1 text-sm leading-relaxed">
+                  로그인하면 내 위치와 내 차 기준으로 답해 드려요. 지금은 {region.name} 기준이에요.
+                </p>
+                <Link href="/login" className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-on-accent">
+                  간편 로그인
+                </Link>
+              </div>
+            )}
+
+            <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {cards.map(({ label, onClick, Icon }) => (
+                <li key={label}>
+                  <button
+                    type="button"
+                    onClick={onClick}
+                    className="flex h-full min-h-[6.75rem] w-full flex-col justify-between gap-3 rounded-2xl bg-canvas p-4 text-left text-[15px] leading-snug font-medium transition-colors hover:bg-flame-soft lg:min-h-[8.5rem]"
+                  >
+                    <Icon className="size-6 text-flame" />
+                    <span>{label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {chips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={chip.onClick}
+                  className="rounded-full px-3.5 py-2 text-sm shadow-raised-sm hover:bg-canvas"
+                >
+                  {chip.label}
+                </button>
+              ))}
+              <Link href="/alerts" className="rounded-full px-3.5 py-2 text-sm text-ink-soft shadow-raised-sm hover:bg-canvas">
+                내 알림 조건 걸기
+              </Link>
+            </div>
+            <p className="mt-6 text-center text-sm text-ink-soft">
               어르신 댁 등유 보일러가 걱정되면{" "}
               <Link href="/kerosene" className="font-semibold text-ink underline underline-offset-4">
                 {KEROSENE_APP.name}
@@ -465,7 +564,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
             return (
               <p
                 key={index}
-                className="ml-auto w-fit max-w-[85%] animate-press rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] shadow-inset"
+                className="ml-auto w-fit max-w-[85%] animate-rise rounded-2xl rounded-br-md bg-canvas px-4 py-2.5 text-[15px]"
               >
                 {message.text}
               </p>
@@ -525,7 +624,9 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
                           <span className="block font-semibold">
                             {station.name} <span className="text-sm font-normal text-ink-soft">{station.brand}</span>
                           </span>
-                          <span className="block truncate text-xs text-ink-soft">{station.address}</span>
+                          <span className="block truncate text-xs text-ink-soft">
+                            {station.address || (station.distanceKm !== undefined ? `직선 ${station.distanceKm}km` : "")}
+                          </span>
                         </span>
                         <span className="shrink-0 text-right">
                           <span className="block text-xl font-bold tabular-nums">
@@ -639,8 +740,8 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
         <div ref={endRef} />
       </div>
 
-      <div className="space-y-3 border-t border-hairline/70 px-4 pt-4 pb-4 sm:px-7 sm:pb-6">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="space-y-3 pt-2 pb-3">
+        <div className="no-scrollbar -mx-1 flex items-center gap-2 overflow-x-auto px-1 py-0.5">
           <div role="radiogroup" aria-label="유종" className="flex shrink-0 rounded-full p-1 shadow-inset-sm">
             {FUELS.map((item) => (
               <button
@@ -649,21 +750,22 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
                 role="radio"
                 aria-checked={fuel === item}
                 onClick={() => setFuel(item)}
-                className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition-shadow ${
-                  fuel === item ? "bg-accent shadow-raised-sm" : "text-ink-soft"
-                }`}
+                className={`rounded-full px-3 py-1 text-sm font-semibold ${fuel === item ? "bg-accent text-on-accent" : "text-ink-soft"}`}
               >
-                {item}
+                {fuelName(item)}
               </button>
             ))}
           </div>
           <span className="relative flex items-center">
-            <select aria-label="출발 위치" title="출발 위치(읍면 행정복지센터)" value={place} onChange={(event) => setPlace(event.target.value)} className={SELECT}>
-              {Object.entries(PLACES).map(([key, item]) => (
-                <option key={key} value={key}>
-                  {item.name}
-                </option>
-              ))}
+            <select aria-label="출발 위치" title="출발 위치" value={place} onChange={(event) => setPlace(event.target.value)} className={SELECT}>
+              {profile.location && <option value={MY}>{profile.location.label}(내 위치)</option>}
+              <optgroup label="울주군 읍면">
+                {Object.entries(PLACES).map(([key, item]) => (
+                  <option key={key} value={key}>
+                    {item.name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <Chevron />
           </span>
@@ -675,7 +777,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
               onChange={(event) => setLiters(Number(event.target.value))}
               className={SELECT}
             >
-              {LITER_OPTIONS.map((option) => (
+              {literOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}L
                 </option>
@@ -701,56 +803,26 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           </div>
         )}
 
-        <form onSubmit={submit} className="flex items-center gap-3">
+        <form onSubmit={submit} className="flex items-center gap-2 rounded-full bg-ground p-1.5 pl-2 shadow-raised">
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             maxLength={500}
-            placeholder="예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"
+            placeholder={loggedIn ? "예: 우리 집 근처 경유, 거리까지 따지면?" : "예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"}
             aria-label="질문 입력"
-            className="min-w-0 flex-1 rounded-full bg-transparent px-5 py-3.5 text-[15px] shadow-inset placeholder:text-ink-soft focus-visible:outline-offset-1"
+            className="min-w-0 flex-1 rounded-full bg-transparent px-4 py-2.5 text-[15px] placeholder:text-ink-soft focus-visible:outline-offset-1"
           />
           <button
             type="submit"
             disabled={busy || !draft.trim()}
             aria-label={busy ? "답변을 준비하고 있어요" : "질문 보내기"}
-            className="grid size-12 shrink-0 place-items-center rounded-full bg-accent text-ink shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:cursor-default disabled:shadow-inset-sm"
+            className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-on-accent disabled:cursor-default disabled:bg-canvas disabled:text-ink-soft"
           >
             <SendIcon />
           </button>
         </form>
+        <p className="text-center text-[11px] text-ink-soft">유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이</p>
       </div>
-    </section>
-  );
-}
-
-function SavedAlerts({ saved, onCheck }: { saved: SavedAlert[]; onCheck: (alert: SavedAlert) => void }) {
-  return (
-    <section aria-label="저장한 가격 알림" className="mt-7">
-      <h2 className="text-sm font-semibold text-ink-soft">내 가격 알림</h2>
-      <ul className="mt-2 space-y-2.5">
-        {saved.map((alert) => (
-          <li key={alert.id} className="flex flex-wrap items-center gap-2.5 rounded-2xl px-4 py-3 shadow-inset-sm">
-            <span className="flex-1 font-semibold">
-              {alert.areaName} {alert.fuel} <span className="tabular-nums">{won(alert.belowWon)}</span>원 이하
-            </span>
-            <button
-              type="button"
-              onClick={() => onCheck(alert)}
-              className="rounded-full px-3.5 py-1.5 text-sm font-semibold shadow-raised-sm active:shadow-inset-sm"
-            >
-              지금 확인
-            </button>
-            <button
-              type="button"
-              onClick={() => removeAlert(alert.id)}
-              className="rounded-full px-3.5 py-1.5 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm"
-            >
-              삭제
-            </button>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }

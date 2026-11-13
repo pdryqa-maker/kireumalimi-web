@@ -47,7 +47,7 @@ export default function KerosenePage() {
       <div className="mt-8 flex flex-wrap items-center gap-3">
         <a
           href={KEROSENE_APP.url}
-          className="rounded-full bg-accent px-5 py-2.5 font-semibold shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm"
+          className="rounded-full bg-accent px-5 py-2.5 font-semibold text-on-accent shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm"
         >
           {KEROSENE_APP.name} 열기
         </a>
@@ -56,7 +56,7 @@ export default function KerosenePage() {
         </Link>
       </div>
       <p className="mt-4 text-xs text-ink-soft">
-        {KEROSENE_APP.name}은 같은 팀(김형준·목서환)이 따로 만든 시제품이에요. 가구와 판매소 정보는 시연용 가상 자료예요.
+        {KEROSENE_APP.name}은 같은 팀(김형준·목서환)이 따로 만든 서비스예요. 가구와 판매소 정보는 시연용 가상 자료예요.
       </p>
     </section>
   );

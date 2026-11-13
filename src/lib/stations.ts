@@ -2,6 +2,7 @@
 import { fetchOpinet, fetchOpinetTimed } from "@/lib/opinet";
 import { PLACES } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
+import { isKatec } from "@/lib/profile";
 
 export const FUEL_CODES: Record<string, string> = {
   휘발유: "B027",
@@ -75,15 +76,39 @@ export function kstTime(iso: string) {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
+export const isAreaCode = (code: string) => /^\d{2}(\d{2})?$/.test(code);
+const AREA_CACHE_MS = 24 * 60 * 60 * 1000; // 지역코드는 거의 바뀌지 않는다
+
+// 오피넷 지역코드. sido를 비우면 시도 목록, 시도 코드(2자리)를 주면 그 시도의 시군구 목록이다.
+export async function areaList(sido = "") {
+  if (sido && !/^\d{2}$/.test(sido)) throw new RangeError("시도 코드는 2자리 숫자입니다.");
+  const { body } = await fetchOpinetTimed("areaCode", sido ? { area: sido } : {}, AREA_CACHE_MS);
+  return rows(body)
+    .map((row) => ({ code: String(row.AREA_CD ?? ""), name: String(row.AREA_NM ?? "") }))
+    .filter((area) => isAreaCode(area.code) && area.name);
+}
+
+// 지역코드 → "울산 울주군". 울산은 미리 적어 둔 이름을 쓰고, 다른 지역은 오피넷 지역코드 목록에서 찾는다.
+export async function areaName(code: string) {
+  if (code in ULSAN_AREAS) return ULSAN_AREAS[code];
+  const sido = (await areaList()).find((area) => area.code === code.slice(0, 2));
+  if (!sido) throw new RangeError("찾을 수 없는 지역코드입니다.");
+  if (code.length === 2) return sido.name;
+  const sigun = (await areaList(sido.code)).find((area) => area.code === code);
+  if (!sigun) throw new RangeError("찾을 수 없는 지역코드입니다.");
+  return `${sido.name} ${sigun.name}`;
+}
+
 export async function findCheapest(fuel: string, area: string, count = 5) {
   const prodcd = FUEL_CODES[fuel];
-  if (!prodcd || !(area in ULSAN_AREAS)) {
+  if (!prodcd || !isAreaCode(area)) {
     throw new RangeError("지원하지 않는 유종 또는 지역입니다.");
   }
+  const name = await areaName(area);
   const { body, fetchedAt } = await fetchOpinetTimed("lowTop10", { prodcd, area, cnt: String(count) });
   return {
     fuel,
-    area: ULSAN_AREAS[area],
+    area: name,
     // 최저가 API에는 가격별 기준 시각이 없어, 오피넷에서 조회한 시각을 따로 준다(상세 정보의 기준 시각과 다름).
     fetchedAt,
     fetchedAtKst: kstTime(fetchedAt),
@@ -123,11 +148,61 @@ export const DEFAULT_LITERS = 40;
 export const DEFAULT_KMPL = 12;
 const RADIUS_M = 5000; // 오피넷 반경 조회의 최대값
 
+// 출발 위치: 울주군 읍면 키(PLACES) 또는 이용자 위치(이름과 KATEC 좌표).
+export type Origin = string | { name: string; x: number; y: number };
+
+function resolveOrigin(origin: Origin) {
+  if (typeof origin === "string") return PLACES[origin] ?? null;
+  return origin.name && isKatec(origin.x, origin.y) ? origin : null;
+}
+
+function aroundRows(body: unknown) {
+  return rows(body)
+    .map((row) => ({
+      id: String(row.UNI_ID),
+      name: String(row.OS_NM),
+      brand: brandName(row.POLL_DIV_CD),
+      price: Number(row.PRICE),
+      distanceM: Number(row.DISTANCE),
+    }))
+    .filter((station) => station.price > 0 && Number.isFinite(station.distanceM));
+}
+
+const toKm = (meters: number) => Math.round(meters / 100) / 10;
+
+// 내 위치 반경 5km 안에서 가격이 낮은 순으로 최대 5곳.
+export async function findNearby(fuel: string, origin: Origin, count = 5) {
+  const prodcd = FUEL_CODES[fuel];
+  const place = resolveOrigin(origin);
+  if (!prodcd || !place) {
+    throw new RangeError("지원하지 않는 유종 또는 위치입니다.");
+  }
+  const { body, fetchedAt } = await fetchOpinetTimed("aroundAll", {
+    x: String(place.x),
+    y: String(place.y),
+    radius: String(RADIUS_M),
+    prodcd,
+    sort: "1",
+  });
+  return {
+    fuel,
+    place: place.name,
+    radiusKm: RADIUS_M / 1000,
+    fetchedAt,
+    fetchedAtKst: kstTime(fetchedAt),
+    distanceNote: "거리는 직선거리라 실제 도로는 더 깁니다.",
+    stations: aroundRows(body)
+      .sort((a, b) => a.price - b.price || a.distanceM - b.distanceM)
+      .slice(0, count)
+      .map(({ distanceM, ...station }) => ({ ...station, distanceKm: toKm(distanceM) })),
+  };
+}
+
 // 실질비용: 기름값(가격 × 주유량)에 출발 위치에서 그 주유소까지 오가는 연료비를 더한 값.
 // 거리는 오피넷이 주는 직선거리라 실제 도로보다 짧다. 그래서 오가는 연료비는 적게 잡힌 값이다.
-export async function findByTotalCost(fuel: string, placeKey: string, liters = DEFAULT_LITERS, kmpl = DEFAULT_KMPL) {
+export async function findByTotalCost(fuel: string, origin: Origin, liters = DEFAULT_LITERS, kmpl = DEFAULT_KMPL) {
   const prodcd = FUEL_CODES[fuel];
-  const place = PLACES[placeKey];
+  const place = resolveOrigin(origin);
   if (!prodcd || !place) {
     throw new RangeError("지원하지 않는 유종 또는 위치입니다.");
   }
@@ -145,24 +220,11 @@ export async function findByTotalCost(fuel: string, placeKey: string, liters = D
     prodcd,
     sort: "1",
   });
-  const all = rows(body)
-    .map((row) => {
-      const price = Number(row.PRICE);
-      const distanceM = Number(row.DISTANCE);
-      const fillWon = Math.round(price * liters);
-      const tripWon = Math.round(((2 * distanceM) / 1000 / kmpl) * price);
-      return {
-        id: String(row.UNI_ID),
-        name: String(row.OS_NM),
-        brand: brandName(row.POLL_DIV_CD),
-        price,
-        distanceKm: Math.round(distanceM / 100) / 10,
-        fillWon,
-        tripWon,
-        totalWon: fillWon + tripWon,
-      };
-    })
-    .filter((station) => station.price > 0 && Number.isFinite(station.distanceKm));
+  const all = aroundRows(body).map(({ distanceM, ...station }) => {
+    const fillWon = Math.round(station.price * liters);
+    const tripWon = Math.round(((2 * distanceM) / 1000 / kmpl) * station.price);
+    return { ...station, distanceKm: toKm(distanceM), fillWon, tripWon, totalWon: fillWon + tripWon };
+  });
 
   const base = {
     fuel,
