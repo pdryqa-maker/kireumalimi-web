@@ -15,8 +15,8 @@ const NAV = [
   { href: "/login", label: "내 정보", Icon: UserIcon },
 ];
 
-// 한국석유공사 로고 파일(public/brand). 파일을 넣으면 크기와 함께 적는다.
-const KNOC_LOGO: { src: string; width: number; height: number } | null = null;
+// 한국석유공사 로고(공사 원본 파일에서 바깥 여백만 잘라 냄). 서포터즈 활동 표시로 머리글에 둔다.
+const KNOC_LOGO = { src: "/brand/knoc-logo.png", width: 429, height: 208 };
 
 function Avatar({ size = "size-9" }: { size?: string }) {
   const profile = useProfile();
@@ -90,12 +90,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 bg-ground/90 backdrop-blur">
           <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-3 px-4 sm:px-6">
-            {KNOC_LOGO && (
-              <>
-                <Image src={KNOC_LOGO.src} alt="한국석유공사" width={KNOC_LOGO.width} height={KNOC_LOGO.height} className="h-6 w-auto" priority />
-                <span aria-hidden="true" className="h-4 w-px bg-hairline" />
-              </>
-            )}
+            <Image src={KNOC_LOGO.src} alt="한국석유공사" width={KNOC_LOGO.width} height={KNOC_LOGO.height} className="h-9 w-auto" priority />
+            <span aria-hidden="true" className="h-5 w-px bg-hairline" />
             <Link href="/" className="flex items-center gap-2">
               <Image src="/brand/yuilmui-mark.png" alt="" width={26} height={26} className="lg:hidden" />
               <span className="text-[17px] font-bold tracking-tight">기름알리미</span>
