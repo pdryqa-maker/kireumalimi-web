@@ -489,7 +489,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
                 {headline}
               </p>
               <h1 className="mt-1 text-[1.75rem] leading-tight font-bold tracking-tight text-balance sm:text-4xl">
-                기름 넣으러 가세요?
+                기름값, 무엇이든 물어보세요
               </h1>
             </div>
 
