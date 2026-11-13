@@ -14,7 +14,7 @@ import {
 import type { FuelReport } from "@/lib/fuelReport";
 import { loadFills } from "@/lib/savedFills";
 import type { CostResult } from "./AnswerCards";
-import { dayWithWeekday, koreanTime, won } from "./format";
+import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
 
 const CARD = "max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised";
 const FIELD =
@@ -271,7 +271,8 @@ export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceip
                     {entry.liters}L{entry.paidWon !== null && ` · ${won(entry.paidWon)}원`}
                     {compared && (
                       <span className="block text-xs text-ink-soft">
-                        평균보다 리터당 {signed(compared.diffWon, "원", "비쌈", "쌈")}
+                        {compared.averageDate === entry.date ? "그날" : `${monthDay(compared.averageDate)}`} 평균보다 리터당{" "}
+                        {signed(compared.diffWon, "원", "비쌈", "쌈")}
                       </span>
                     )}
                   </span>
