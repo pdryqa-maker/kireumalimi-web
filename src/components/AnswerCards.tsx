@@ -1,13 +1,21 @@
 // 실질비용, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
 import type { AlertProposal, FillProposal } from "@/lib/chatbot";
+import type { Fill } from "@/lib/fillAmount";
 import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
 import type { findByTotalCost } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
 
 export type CostResult = Awaited<ReturnType<typeof findByTotalCost>>;
 export type CostStation = CostResult["stations"][number];
-export type TaxImpact = Exclude<ReturnType<typeof taxCutImpact>, { error: string }>;
-export type CapNotice = Exclude<ReturnType<typeof priceCapNotice>, { error: string }>;
+// 제도 금액은 한 번에 넣는 양(fill)으로 셈한다. 금액을 리터로 바꿀 평균가를 못 받으면 fill이 null이고 리터당 금액만 보여 준다.
+export type TaxImpact = Exclude<ReturnType<typeof taxCutImpact>, { error: string }> & { fill: Fill | null };
+export type CapNotice = Exclude<ReturnType<typeof priceCapNotice>, { error: string }> & { fill: Fill | null };
+
+// "5만원어치(약 27L)" 다음에 붙는 말: 금액이면 어떤 가격으로 리터를 셈했는지, 가득이면 어떤 리터인지.
+export function fillBasis(fill: Fill) {
+  if (fill.pricePerLiter && fill.priceBasis) return `리터는 ${fill.priceBasis} ${won(fill.pricePerLiter)}원으로 셈했어요.`;
+  return fill.fullBasis ?? "";
+}
 export type AlertStatus = "proposed" | "saved" | "unsaved" | "dismissed";
 export type PriceRow = { id: string; name: string; brand: string; price: number };
 export type AlertCheck = AlertProposal & { fetchedAt: string; matches: PriceRow[]; lowest: PriceRow | null };
@@ -38,7 +46,7 @@ export function CostCard({
   const { cheapest } = cost;
   return (
     <div className={CARD}>
-      <CardHead title={`${cost.place} 출발 · ${cost.fuel} ${cost.liters}L 실질비용`} fetchedAt={cost.fetchedAt} />
+      <CardHead title={`${cost.place} 출발 · ${cost.fuel} ${cost.fill.label} 실질비용`} fetchedAt={cost.fetchedAt} />
       <p className="mt-1 text-xs text-ink-soft">
         기름값에 오가는 연료비(연비 {cost.kmpl}km/L, 직선 왕복)를 더한 총비용 순 · 반경 {cost.radiusKm}km
       </p>
@@ -78,8 +86,8 @@ export function CostCard({
           : "가장 싼 곳이 거리까지 따져도 가장 덜 들어요."}
       </p>
       <p className="mt-2 text-xs text-ink-soft">
-        {cost.liters}L, {cost.kmpl}km/L 기준으로 1km 더 가려면 리터당 약 {cost.breakEvenWonPerKm}원은 더 싸야 해요.
-        거리는 직선거리라 실제 도로는 더 길어요. {PUMP_NOTE}
+        {cost.fill.label}, {cost.kmpl}km/L 기준으로 1km 더 가려면 리터당 약 {cost.breakEvenWonPerKm}원은 더 싸야 해요.
+        같은 양을 넣을 때를 비교했어요. {fillBasis(cost.fill)} 거리는 직선거리라 실제 도로는 더 길어요. {PUMP_NOTE}
       </p>
     </div>
   );
@@ -87,22 +95,27 @@ export function CostCard({
 
 export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null }) {
   const best = cost?.stations[0];
+  const extra =
+    tax.fill && tax.maxExtraWon !== null
+      ? `${tax.fuel} ${tax.fill.label}를 넣는 데 최대 ${won(tax.maxExtraWon)}원 더 들어요.`
+      : `${tax.fuel}는 리터당 최대 ${won(tax.wonPerLiter)}원 더 들어요.`;
   const message =
-    `유류세 인하가 ${monthDay(tax.endsOn)}에 끝날 예정이에요. ${tax.fuel} ${tax.liters}L 기준 최대 ${won(tax.maxExtraWon)}원 더 들어요.` +
+    `유류세 인하가 ${monthDay(tax.endsOn)}에 끝날 예정이에요. ${extra}` +
     (best && cost ? ` ${cost.place} 근처 추천: ${best.name}, 리터당 ${won(best.price)}원(거리까지 따져 가장 덜 들어요).` : "");
   return (
     <div className={CARD}>
       <CardHead title="제도 변경 알림 미리보기 · 유류세 인하" />
       <p className="mt-4 text-sm text-ink-soft">
-        {longDate(tax.endsOn)} 인하가 끝나면 {tax.fuel} {tax.liters}L에
+        {longDate(tax.endsOn)} 인하가 끝나면 {tax.fuel} {tax.fill && tax.maxExtraWon !== null ? `${tax.fill.label}에` : "리터당"}
       </p>
       <p className="mt-1 text-3xl font-bold tabular-nums">
-        최대 {won(tax.maxExtraWon)}
+        최대 {won(tax.fill && tax.maxExtraWon !== null ? tax.maxExtraWon : tax.wonPerLiter)}
         <span className="ml-0.5 text-base font-medium">원</span>
       </p>
       <p className="mt-1 text-sm text-ink-soft">
         더 들어요 · 리터당 {tax.wonPerLiter}원(인하율 {tax.ratePct}%) · {monthDay(tax.decidedOn)} 정부 연장 결정
       </p>
+      {tax.fill && tax.maxExtraWon !== null && <p className="mt-1 text-xs text-ink-soft">{fillBasis(tax.fill)}</p>}
       {best && cost && (
         <dl className="mt-4 rounded-2xl px-4 py-3 shadow-inset-sm">
           <dt className="text-xs text-ink-soft">{cost.place} 출발, 거리까지 따져 가장 덜 드는 곳</dt>
@@ -180,7 +193,8 @@ export function CapCard({
             ? `${fuelLabel(cap.fuel)} 상한을 비교할 직전 차수 정보가 없어요.`
             : change === 0
               ? `${fuelLabel(cap.fuel)} 상한은 ${cap.previousRound}차와 같아요. 이번 고시로 공급가 상한이 바뀌지 않았어요.`
-              : `${fuelLabel(cap.fuel)} 상한이 리터당 ${won(Math.abs(change))}원 ${change < 0 ? "내려" : "올라"}, ${cap.liters}L면 최대 ${won(cap.maxDiffWon ?? 0)}원 차이가 나요.`}
+              : `${fuelLabel(cap.fuel)} 상한이 리터당 ${won(Math.abs(change))}원 ${change < 0 ? "내려" : "올라"}` +
+                (cap.fill && cap.maxDiffWon !== null ? `, ${cap.fill.label}면 최대 ${won(cap.maxDiffWon)}원 차이가 나요.` : "요.")}
         </li>
         <li>판매가에 언제 얼마나 반영될지는 주유소마다 달라요. 지난 고시 때 우리 동네가 어떻게 움직였는지 볼 수 있어요.</li>
       </ol>

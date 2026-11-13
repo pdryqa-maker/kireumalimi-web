@@ -1,26 +1,27 @@
 import type { NextRequest } from "next/server";
+import { AMOUNT_ERROR, fillRequestOrDefault, resolveFill } from "@/lib/fillPrice";
 import { OpinetError } from "@/lib/opinet";
 import { originFrom } from "@/lib/origin";
 import { limitByClient } from "@/lib/rateLimit";
-import { DEFAULT_KMPL, DEFAULT_LITERS, findByTotalCost } from "@/lib/stations";
+import { DEFAULT_KMPL, findByTotalCost } from "@/lib/stations";
 
-// 예: /api/stations/total-cost?fuel=휘발유&place=eonyang&liters=40 또는 ...&x=502243&y=330555&label=집
+// 예: /api/stations/total-cost?fuel=휘발유&place=eonyang&amount=50000 또는 ...&amount=full&full=40&x=502243&y=330555&label=집
 export async function GET(request: NextRequest) {
   const limited = limitByClient(request, "data");
   if (limited) return limited;
   const { searchParams } = request.nextUrl;
+  const fuel = searchParams.get("fuel") ?? "휘발유";
   try {
+    const fill = await resolveFill(fuel, fillRequestOrDefault(searchParams));
+    if (!fill) {
+      return Response.json({ error: "오늘 평균 판매가를 불러오지 못해 금액을 리터로 바꾸지 못했어요. 잠시 뒤 다시 해 주세요." }, { status: 502 });
+    }
     return Response.json(
-      await findByTotalCost(
-        searchParams.get("fuel") ?? "휘발유",
-        originFrom(searchParams),
-        Number(searchParams.get("liters") ?? DEFAULT_LITERS),
-        Number(searchParams.get("kmpl") ?? DEFAULT_KMPL),
-      ),
+      await findByTotalCost(fuel, originFrom(searchParams), fill, Number(searchParams.get("kmpl") ?? DEFAULT_KMPL)),
     );
   } catch (error) {
     if (error instanceof RangeError) {
-      return Response.json({ error: error.message }, { status: 400 });
+      return Response.json({ error: error.message || AMOUNT_ERROR }, { status: 400 });
     }
     if (error instanceof OpinetError) {
       return Response.json({ error: error.message }, { status: 502 });

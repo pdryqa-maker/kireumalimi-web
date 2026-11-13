@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { buildNotices, kstClock, RULES, scheduleNotices, type Planned, type PriceCheck } from "@/lib/conditions";
+import { amountName } from "@/lib/fillAmount";
 import { addDays } from "@/lib/fillForecast";
 import { FUEL_TAX_CUT, PRICE_CAP } from "@/lib/policy";
 import { addAlert, alertStore, MAX_ALERTS, parseAlerts, removeAlert, type SavedAlert } from "@/lib/savedAlerts";
@@ -13,6 +14,7 @@ import { fuelName, signedIn } from "@/lib/profile";
 import { parseWatch, saveWatch, watchStore, type Watch } from "@/lib/watchSettings";
 import { FillLogCard } from "./FillCards";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
+import { useFill, useFullLiters } from "./useFill";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const SELECT =
@@ -130,7 +132,10 @@ export default function AlertsManager() {
   const fills = useStored(fillStore, parseFills);
   const profile = useProfile();
   const mounted = useMounted();
-  const car = { fuel: profile.fuel, liters: profile.liters };
+  const fullTank = useFullLiters(profile.fullLiters);
+  const { fill } = useFill(profile.fuel, profile.amount, fullTank);
+  const car = { fuel: profile.fuel, fill };
+  const carAmount = fill?.label ?? amountName(profile.amount);
   const [checks, setChecks] = useState<Record<string, PriceCheck>>({});
   const [checking, setChecking] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
@@ -229,7 +234,7 @@ export default function AlertsManager() {
           <span className="text-sm">
             <span className="font-semibold">내 차</span>{" "}
             <span className="text-ink-soft tabular-nums">
-              {fuelName(car.fuel)} · 한 번에 {car.liters}L
+              {fuelName(car.fuel)} · 한 번에 {carAmount}
             </span>
           </span>
           <span className="text-xs text-ink-soft">제도 알림의 금액을 이 기준으로 셈해요.</span>
@@ -301,7 +306,7 @@ export default function AlertsManager() {
             <div className="flex-1">
               <p className="font-semibold">석유 최고가격 새 고시 발표 직후</p>
               <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
-                공급가 상한이 바뀌면 내 {fuelName(car.fuel)} {car.liters}L에서 최대 얼마 달라지는지 알려요. 지금은 {latestCap.round}차 고시
+                공급가 상한이 바뀌면 내 {fuelName(car.fuel)} {carAmount}에서 최대 얼마 달라지는지 알려요. 지금은 {latestCap.round}차 고시
                 기준이에요.
               </p>
             </div>

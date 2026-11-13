@@ -4,9 +4,11 @@
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { AMOUNT_CHOICES, AMOUNT_LIMITS, amountShort, cleanWon, fullNote } from "@/lib/fillAmount";
 import { inKorea, toKatec } from "@/lib/katec";
 import { cleanText, fuelName, GUEST, LIMITS, PROFILE_FUELS, profileStore, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { LocateIcon } from "./icons";
+import { useFullLiters } from "./useFill";
 import { useMounted, useProfile } from "./useStored";
 
 type Area = { code: string; name: string };
@@ -48,8 +50,13 @@ export default function LoginForm() {
   const [picking, setPicking] = useState(false);
   const lookupRef = useRef(0); // 위치·지역 찾기가 늦게 끝나 나중 입력을 덮지 않도록 순번을 센다
   const [error, setError] = useState("");
+  // 직접 입력한 금액. 고르는 값에 없는 금액이 저장돼 있으면 처음부터 직접 입력으로 연다.
+  const [customWon, setCustomWon] = useState<string | null>(null);
 
   const form = draft ?? saved;
+  const fullTank = useFullLiters(form.fullLiters);
+  const custom = customWon !== null || (form.amount !== "full" && !AMOUNT_CHOICES.includes(form.amount));
+  const customText = customWon ?? (form.amount !== "full" ? String(form.amount) : "");
   const edit = (next: Partial<Profile>) => {
     setDraft({ ...form, ...next });
     setError("");
@@ -166,19 +173,23 @@ export default function LoginForm() {
       setError("부를 이름을 넣어 주세요.");
       return;
     }
-    if (!Number.isInteger(form.liters) || form.liters < LIMITS.minLiters || form.liters > LIMITS.maxLiters) {
-      setError(`한 번에 넣는 양은 ${LIMITS.minLiters}~${LIMITS.maxLiters}L 사이 정수로 넣어 주세요.`);
+    const amount = custom ? cleanWon(Number(customText)) : form.amount;
+    if (amount === null) {
+      setError(
+        `직접 넣는 금액은 ${AMOUNT_LIMITS.minWon.toLocaleString()}~${AMOUNT_LIMITS.maxWon.toLocaleString()}원 사이, 천원 단위로 넣어 주세요.`,
+      );
       return;
     }
     if (!(form.kmpl >= LIMITS.minKmpl && form.kmpl <= LIMITS.maxKmpl)) {
       setError(`연비는 ${LIMITS.minKmpl}~${LIMITS.maxKmpl}km/L 사이로 넣어 주세요.`);
       return;
     }
-    if (!saveProfile({ ...form, name })) {
+    if (!saveProfile({ ...form, name, amount })) {
       setError("이 브라우저에 저장하지 못했어요. 개인 정보 보호 모드인지 확인해 주세요.");
       return;
     }
     setDraft(null);
+    setCustomWon(null);
     router.push("/");
   }
 
@@ -306,7 +317,7 @@ export default function LoginForm() {
           )}
         </Section>
 
-        <Section title="내 차" note="유종, 한 번에 넣는 양, 연비로 금액과 거리 비용을 셈해요.">
+        <Section title="내 차" note="유종, 한 번에 넣는 금액, 연비로 금액과 거리 비용을 셈해요.">
           <div role="radiogroup" aria-label="유종" className="flex flex-wrap gap-2">
             {PROFILE_FUELS.map((fuel) => (
               <button
@@ -323,20 +334,68 @@ export default function LoginForm() {
               </button>
             ))}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-sm text-ink-soft">한 번에 넣는 양(L)</span>
+          <p id="amount-label" className="mt-5 text-sm text-ink-soft">
+            한 번에 넣는 금액
+          </p>
+          <div role="radiogroup" aria-labelledby="amount-label" className="mt-1.5 flex flex-wrap gap-2">
+            {AMOUNT_CHOICES.map((choice) => {
+              const on = !custom && form.amount === choice;
+              return (
+                <button
+                  key={choice}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => {
+                    setCustomWon(null);
+                    edit({ amount: choice });
+                  }}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold tabular-nums ${on ? "bg-accent text-on-accent" : "shadow-raised-sm"}`}
+                >
+                  {amountShort(choice)}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={custom}
+              onClick={() => {
+                setCustomWon(customText);
+                setError("");
+              }}
+              className={`rounded-full px-4 py-2 text-sm font-semibold ${custom ? "bg-accent text-on-accent" : "shadow-raised-sm"}`}
+            >
+              직접 입력
+            </button>
+          </div>
+          {custom && (
+            <label className="mt-3 flex items-center gap-2">
+              <span className="sr-only">한 번에 넣는 금액(원)</span>
               <input
                 type="number"
                 inputMode="numeric"
-                min={LIMITS.minLiters}
-                max={LIMITS.maxLiters}
+                min={AMOUNT_LIMITS.minWon}
+                max={AMOUNT_LIMITS.maxWon}
+                step={AMOUNT_LIMITS.stepWon}
                 required
-                value={form.liters}
-                onChange={(event) => edit({ liters: Number(event.target.value) })}
-                className={`${FIELD} mt-1.5 tabular-nums`}
+                value={customText}
+                onChange={(event) => {
+                  setCustomWon(event.target.value);
+                  setError("");
+                }}
+                placeholder="예: 45000"
+                className={`${FIELD} max-w-[10rem] tabular-nums`}
               />
+              <span className="text-sm text-ink-soft">원</span>
             </label>
+          )}
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+            {!custom && form.amount === "full"
+              ? fullNote(fullTank)
+              : "금액은 그날 전국 평균 판매가로 몇 리터인지 셈해요."}
+          </p>
+          <div className="mt-5 grid grid-cols-2 gap-3">
             <label className="block">
               <span className="text-sm text-ink-soft">연비(km/L)</span>
               <input

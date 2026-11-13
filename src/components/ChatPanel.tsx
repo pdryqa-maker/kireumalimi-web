@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AlertProposal, FillProposal } from "@/lib/chatbot";
 import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
 import type { FuelReport } from "@/lib/fuelReport";
+import { AMOUNT_CHOICES, amountName, amountQuery, amountShort, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
@@ -34,10 +35,10 @@ import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary }
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 import { CalendarIcon, CameraIcon, ChartIcon, DropIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
+import { fetchFill, useFullLiters } from "./useFill";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const FUELS = PROFILE_FUELS;
-const LITER_OPTIONS = [20, 30, 40, 50, 60];
 const MY = "my";
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
@@ -153,27 +154,32 @@ function costSummary(cost: CostResult) {
   const rows = cost.stations
     .map((s, rank) => `${rank + 1}. ${s.name} 리터당 ${won(s.price)}원, 직선 ${s.distanceKm}km, 총 ${won(s.totalWon)}원`)
     .join("; ");
-  return `${cost.place} 출발 ${cost.fuel} ${cost.liters}L 실질비용 순(연비 ${cost.kmpl}km/L, 직선 왕복, ${koreanTime(cost.fetchedAt)} 조회): ${rows}`;
+  return `${cost.place} 출발 ${cost.fuel} ${cost.fill.label} 실질비용 순(연비 ${cost.kmpl}km/L, 직선 왕복, ${koreanTime(cost.fetchedAt)} 조회): ${rows}`;
 }
 
 function taxSummary(tax: TaxImpact, cost: CostResult | null) {
   const best = cost?.stations[0];
   return (
-    `유류세 인하는 ${tax.endsOn} 종료 예정(${tax.decidedOn} 연장 결정). 끝나면 ${tax.fuel} ${tax.liters}L에 최대 ${won(tax.maxExtraWon)}원 더 듦(리터당 ${tax.wonPerLiter}원).` +
+    `유류세 인하는 ${tax.endsOn} 종료 예정(${tax.decidedOn} 연장 결정). 끝나면 ` +
+    (tax.fill && tax.maxExtraWon !== null
+      ? `${tax.fuel} ${tax.fill.label}에 최대 ${won(tax.maxExtraWon)}원 더 듦(리터당 ${tax.wonPerLiter}원).`
+      : `${tax.fuel} 리터당 최대 ${tax.wonPerLiter}원 더 듦.`) +
     (best && cost ? ` ${cost.place} 출발 거리까지 따진 추천: ${best.name} 리터당 ${won(best.price)}원.` : "")
   );
 }
 
 function capSummary(cap: CapNotice) {
   const diff =
-    cap.maxDiffWon === null || cap.changeWon === 0
+    cap.maxDiffWon === null || cap.changeWon === 0 || !cap.fill
       ? ""
-      : ` ${fuelLabel(cap.fuel)} ${cap.liters}L 기준 최대 ${won(cap.maxDiffWon)}원 차이.`;
+      : ` ${fuelLabel(cap.fuel)} ${cap.fill.label} 기준 최대 ${won(cap.maxDiffWon)}원 차이.`;
   return `${capMessage(cap)}${diff}`;
 }
 
 function forecastSummary(forecast: FillForecast, cost: CostResult | null) {
-  const records = forecast.records.map((record) => `${record.date} ${record.liters}L`).join(", ");
+  const records = forecast.records
+    .map((record) => `${record.date} ${record.won ? wonName(record.won) : `${record.liters}L`}`)
+    .join(", ");
   return (
     `주유 기록(${records}) 기준 다음 주유 예상 ${forecast.nextDate}, 평균 ${forecast.avgGapDays}일 간격, 알림일 ${forecast.notifyOn}. ` +
     forecastMessage(forecast, cost)
@@ -234,7 +240,7 @@ function nextNotice(profile: Profile) {
   const watch = parseWatch(watchStore.read());
   const notices = buildNotices({
     watch,
-    car: { fuel: profile.fuel, liters: profile.liters },
+    car: { fuel: profile.fuel, fill: null }, // 제목과 보낼 날만 쓰므로 금액은 셈하지 않는다
     alerts: parseAlerts(alertStore.read()),
     checks: {},
     fills: parseFills(fillStore.read()),
@@ -335,7 +341,7 @@ export default function ChatPanel({
   // 화면에서 고른 값이 있으면 그 값, 없으면 내 정보(로그인 전에는 기본값)를 쓴다.
   const [fuelChoice, setFuel] = useState<string | null>(null);
   const [placeChoice, setPlace] = useState<string | null>(null);
-  const [litersChoice, setLiters] = useState<number | null>(null);
+  const [amountChoice, setAmount] = useState<Amount | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState<SkeletonKind | null>(null);
   const [draft, setDraft] = useState("");
@@ -345,12 +351,15 @@ export default function ChatPanel({
   const fills = useStored(fillStore, parseFills);
   const ledger = useStored(ledgerStore, parseLedger);
   const fuel = fuelChoice ?? profile.fuel;
-  const liters = litersChoice ?? profile.liters;
+  const amount = amountChoice ?? profile.amount;
+  const fullTank = useFullLiters(profile.fullLiters);
   const place = placeChoice === MY && !profile.location ? DEFAULT_PLACE : (placeChoice ?? (profile.location ? MY : DEFAULT_PLACE));
   const placeName = place === MY && profile.location ? profile.location.label : PLACES[place].name;
   const homeArea = profile.area ?? { code: region.area, name: region.name };
   const loggedIn = mounted && signedIn(profile);
-  const literOptions = [...new Set([...LITER_OPTIONS, liters])].sort((a, b) => a - b);
+  const amountOptions = AMOUNT_CHOICES.includes(amount) ? AMOUNT_CHOICES : [...AMOUNT_CHOICES.slice(0, -1), amount, "full" as const].sort((a, b) => (a === "full" ? 1 : b === "full" ? -1 : a - b));
+  // 제도 금액 질문의 말: "5만원어치 넣는 데", "가득 넣는 데"
+  const amountPhrase = (chosen: Amount) => `${chosen === "full" ? "가득" : amountName(chosen)} 넣는 데`;
 
   // 출발 위치 조회 값: 내 위치면 좌표와 이름, 아니면 읍면 키
   const originQuery = (chosen: string): Record<string, string> =>
@@ -418,16 +427,16 @@ export default function ChatPanel({
     });
 
   const askTotalCost = () => {
-    const [chosenFuel, chosenPlace, chosenLiters] = [fuel, place, liters];
+    const [chosenFuel, chosenPlace, chosenAmount] = [fuel, place, amount];
     ask(`${placeName}에서 거리까지 따지면 ${fuelName(chosenFuel)} 어디가 나아?`, "list", async () => {
       const query = new URLSearchParams({
         fuel: chosenFuel,
         ...originQuery(chosenPlace),
-        liters: String(chosenLiters),
+        ...amountQuery(chosenAmount, fullTank),
         kmpl: String(profile.kmpl),
       });
       const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
-      if (!ok || !body) return null;
+      if (!ok || !body) return body?.error ? { from: "bot", text: body.error } : null;
       if (body.stations.length === 0) {
         return { from: "bot", text: `${body.place} 반경 ${body.radiusKm}km 안에서 ${chosenFuel} 가격을 알린 주유소가 없어요.` };
       }
@@ -436,12 +445,12 @@ export default function ChatPanel({
   };
 
   const askTax = () => {
-    const [chosenFuel, chosenPlace, chosenLiters] = [fuel, place, liters];
-    ask(`유류세 인하 끝나면 ${fuelName(chosenFuel)} ${chosenLiters}L에 얼마 더 들어?`, "text", async () => {
+    const [chosenFuel, chosenPlace, chosenAmount] = [fuel, place, amount];
+    ask(`유류세 인하 끝나면 ${fuelName(chosenFuel)} ${amountPhrase(chosenAmount)} 얼마 더 들어?`, "text", async () => {
       const query = new URLSearchParams({
         fuel: chosenFuel,
         ...originQuery(chosenPlace),
-        liters: String(chosenLiters),
+        ...amountQuery(chosenAmount, fullTank),
         kmpl: String(profile.kmpl),
       });
       const { ok, body } = await getJson(`/api/alert-preview?${query}`);
@@ -461,11 +470,13 @@ export default function ChatPanel({
   };
 
   const askCap = () => {
-    const [chosenFuel, chosenLiters] = [fuel, liters];
+    const [chosenFuel, chosenAmount] = [fuel, amount];
     ask(CAP_QUESTION, "text", async () => {
-      const result = priceCapNotice(chosenFuel, chosenLiters);
+      // 금액을 리터로 바꿀 평균가를 못 받으면 리터당 값만 보여 준다.
+      const fill = await fetchFill(chosenFuel, chosenAmount, fullTank);
+      const result = priceCapNotice(chosenFuel, fill?.liters ?? null);
       if (typeof result.error === "string") return { from: "bot", text: result.error };
-      const cap = result as CapNotice;
+      const cap = { ...result, fill } as CapNotice;
       return { from: "bot", cap, summary: capSummary(cap) };
     });
   };
@@ -474,7 +485,7 @@ export default function ChatPanel({
     ask(FORECAST_QUESTION, "text", async () => ({
       from: "bot",
       fillForm: true,
-      summary: "주유 기록 입력 카드를 보여 줌. 이용자가 날짜와 리터를 넣고 계산을 누르면 다음 주유일을 알려 줌.",
+      summary: "주유 기록 입력 카드를 보여 줌. 이용자가 날짜와 금액을 넣고 계산을 누르면 다음 주유일을 알려 줌.",
     }));
 
   // 이번 달 주유 리포트. AI 없이 장부로 셈하고, 단가는 그날 시도 평균과 비교한다.
@@ -495,10 +506,17 @@ export default function ChatPanel({
     const [chosenFuel, chosenPlace] = [fuel, place];
     saveFills(forecast.records);
     ask(`주유 기록 ${forecast.records.length}번으로 다음 주유일 계산해 줘`, "text", async () => {
+      // 추천은 기록에서 보통 넣는 금액(없으면 리터, 그것도 없으면 내 차 설정)으로 셈한다.
+      const typical: Record<string, string> =
+        forecast.typicalWon !== null
+          ? { amount: String(forecast.typicalWon) }
+          : forecast.typicalLiters !== null
+            ? { liters: String(forecast.typicalLiters) }
+            : amountQuery(profile.amount, fullTank);
       const query = new URLSearchParams({
         fuel: chosenFuel,
         ...originQuery(chosenPlace),
-        liters: String(Math.min(Math.max(forecast.typicalLiters, 1), 300)),
+        ...typical,
         kmpl: String(profile.kmpl),
       });
       // 추천은 오피넷이 안 될 때 빼고 보여 준다. 예상일은 기록만으로 셈한 값이라 그대로 쓸 수 있다.
@@ -645,7 +663,7 @@ export default function ChatPanel({
       cards: [
         { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
         { label: EXPLAIN_QUESTION, onClick: () => askFree(EXPLAIN_QUESTION), Icon: ChartIcon },
-        { label: `유류세 인하 끝나면 ${liters}L에 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
+        { label: `유류세 인하 끝나면 ${amountPhrase(amount)} 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
         { label: CAP_QUESTION, onClick: askCap, Icon: PumpIcon },
       ],
       chips: [
@@ -964,15 +982,15 @@ export default function ChatPanel({
           </span>
           <span className="relative flex items-center">
             <select
-              aria-label="주유량"
-              title="한 번에 넣는 주유량"
-              value={liters}
-              onChange={(event) => setLiters(Number(event.target.value))}
+              aria-label="주유 금액"
+              title="한 번에 넣는 금액"
+              value={String(amount)}
+              onChange={(event) => setAmount(event.target.value === "full" ? "full" : Number(event.target.value))}
               className={SELECT}
             >
-              {literOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}L
+              {amountOptions.map((option) => (
+                <option key={option} value={String(option)}>
+                  {amountShort(option)}
                 </option>
               ))}
             </select>

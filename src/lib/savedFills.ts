@@ -5,7 +5,10 @@ import type { FillRecord } from "./fillForecast";
 export const fillStore = browserStore("kireumalimi.fills", "[]");
 
 export const parseFills = (raw: string) =>
-  parseList<FillRecord>(raw, (item) => typeof item?.date === "string" && Number.isInteger(item?.liters));
+  parseList<FillRecord>(
+    raw,
+    (item) => typeof item?.date === "string" && (Number.isInteger(item?.liters) || Number.isInteger(item?.won)),
+  );
 
 export const loadFills = () => parseFills(fillStore.read());
 

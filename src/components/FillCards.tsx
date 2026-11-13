@@ -7,10 +7,12 @@ import {
   forecastNextFill,
   MAX_RECORDS,
   MIN_RECORDS,
+  RECORD_WON,
   todayKst,
   type FillForecast,
   type FillRecord,
 } from "@/lib/fillForecast";
+import { wonName } from "@/lib/fillAmount";
 import type { FuelReport } from "@/lib/fuelReport";
 import { loadFills } from "@/lib/savedFills";
 import type { CostResult } from "./AnswerCards";
@@ -21,24 +23,32 @@ const FIELD =
   "min-w-0 rounded-full bg-transparent px-3.5 py-2 text-[15px] tabular-nums shadow-inset-sm focus-visible:outline-offset-1";
 const BUTTON = "rounded-full px-4 py-2 text-sm font-semibold shadow-raised-sm active:shadow-inset-sm disabled:opacity-50";
 
-type Row = { date: string; liters: string };
+// 금액(won)으로 받는다. 영수증이나 예전 기록처럼 리터만 있는 줄은 리터를 그대로 두고 보여 준다.
+type Row = { date: string; won: string; liters: number | null };
 
 // 저장한 기록이 없으면 예시 기록을 채워 둔다. 이용자가 바꿔 쓰면 된다.
 function initialRows(): { rows: Row[]; example: boolean } {
   const saved = loadFills();
   if (saved.length >= MIN_RECORDS) {
-    return { rows: saved.map((record) => ({ date: record.date, liters: String(record.liters) })), example: false };
+    return {
+      rows: saved.map((record) => ({ date: record.date, won: record.won ? String(record.won) : "", liters: record.liters ?? null })),
+      example: false,
+    };
   }
   const today = todayKst();
   return {
     rows: [
-      { date: addDays(today, -15), liters: "40" },
-      { date: addDays(today, -8), liters: "38" },
-      { date: addDays(today, -1), liters: "40" },
+      { date: addDays(today, -15), won: "50000", liters: null },
+      { date: addDays(today, -8), won: "50000", liters: null },
+      { date: addDays(today, -1), won: "60000", liters: null },
     ],
     example: true,
   };
 }
+
+// 금액을 비워 두면 그 줄의 리터(영수증 기록)를 쓴다.
+const toRecord = (row: Row): FillRecord =>
+  row.won.trim() !== "" ? { date: row.date, won: Number(row.won) } : { date: row.date, liters: row.liters };
 
 export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForecast) => void; busy: boolean }) {
   const [{ rows, example }, setState] = useState(initialRows);
@@ -52,7 +62,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    const records: FillRecord[] = rows.map((row) => ({ date: row.date, liters: Number(row.liters) }));
+    const records: FillRecord[] = rows.map(toRecord);
     try {
       onSubmit(forecastNextFill(records, today));
     } catch (problem) {
@@ -64,7 +74,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
     <form onSubmit={submit} className={CARD} aria-label="주유 기록 입력">
       <h2 className="text-sm font-semibold text-ink-soft">내 차 주유 예보 · 주유 기록</h2>
       <p className="mt-2 text-[15px] leading-relaxed">
-        최근에 주유한 날짜와 양을 {MIN_RECORDS}~{MAX_RECORDS}번 넣어 주세요. 기록 사이 간격으로 다음 주유일을 셈해요.
+        최근에 주유한 날짜와 금액을 {MIN_RECORDS}~{MAX_RECORDS}번 넣어 주세요. 기록 사이 간격으로 다음 주유일을 셈해요.
       </p>
       {example && <p className="mt-1 text-xs text-ink-soft">예시 기록이에요. 내 기록으로 바꿔 주세요.</p>}
       <ul className="mt-3 space-y-2.5">
@@ -82,17 +92,20 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
             <span className="relative flex shrink-0 items-center">
               <input
                 type="number"
-                required
+                required={row.liters === null}
                 inputMode="numeric"
-                min={1}
-                max={300}
-                value={row.liters}
-                aria-label={`${index + 1}번째 주유량(리터)`}
-                onChange={(event) => update(rows.map((item, at) => (at === index ? { ...item, liters: event.target.value } : item)))}
-                className={`${FIELD} w-[4.5rem] pr-7 text-right`}
+                min={RECORD_WON.min}
+                max={RECORD_WON.max}
+                value={row.won}
+                placeholder={row.liters !== null ? `${row.liters}L` : undefined}
+                aria-label={`${index + 1}번째 주유 금액(원)${row.liters !== null ? `, 비워 두면 ${row.liters}리터` : ""}`}
+                onChange={(event) =>
+                  update(rows.map((item, at) => (at === index ? { ...item, won: event.target.value } : item)))
+                }
+                className={`${FIELD} w-[6.5rem] pr-7 text-right`}
               />
               <span aria-hidden="true" className="pointer-events-none absolute right-3 text-sm text-ink-soft">
-                L
+                원
               </span>
             </span>
             <button
@@ -119,7 +132,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
           다음 주유일 계산
         </button>
         {rows.length < MAX_RECORDS && (
-          <button type="button" onClick={() => update([...rows, { date: today, liters: "40" }])} disabled={busy} className={BUTTON}>
+          <button type="button" onClick={() => update([...rows, { date: today, won: "50000", liters: null }])} disabled={busy} className={BUTTON}>
             기록 추가
           </button>
         )}
@@ -146,7 +159,12 @@ export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost:
     <div className={CARD}>
       <h2 className="text-sm font-semibold text-ink-soft">내 차 주유 예보</h2>
       <p className="mt-4 text-sm text-ink-soft tabular-nums">
-        기록 {forecast.records.length}번 · 평균 {forecast.avgGapDays}일마다 · 보통 {forecast.typicalLiters}L
+        기록 {forecast.records.length}번 · 평균 {forecast.avgGapDays}일마다
+        {forecast.typicalWon !== null
+          ? ` · 보통 ${wonName(forecast.typicalWon)}`
+          : forecast.typicalLiters !== null
+            ? ` · 보통 ${forecast.typicalLiters}L`
+            : ""}
       </p>
       <p className="mt-1 text-3xl font-bold tabular-nums">
         {dayWithWeekday(forecast.nextDate)}
@@ -158,7 +176,7 @@ export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost:
       {best && cost && (
         <dl className="mt-4 rounded-2xl px-4 py-3 shadow-inset-sm">
           <dt className="text-xs text-ink-soft">
-            {cost.place} 출발 {cost.fuel} {cost.liters}L, 거리까지 따져 가장 덜 드는 곳(지금 가격)
+            {cost.place} 출발 {cost.fuel} {cost.fill.label}, 거리까지 따져 가장 덜 드는 곳(지금 가격)
           </dt>
           <dd className="mt-1 font-semibold">
             {best.name} <span className="text-sm font-normal text-ink-soft">{best.brand}</span>
@@ -191,10 +209,13 @@ const signed = (value: number, unit: string, more: string, less: string) =>
 // 대화 기록에 남길 리포트 요약. 다음 자유 질문에서 AI가 이 값을 이어 쓴다.
 export function reportSummary(report: FuelReport) {
   if (report.fills === 0) return `${report.monthLabel} 주유 리포트: 이 달 주유 기록 없음.`;
+  const noLiters = report.litersUnknownFills === report.fills;
   const parts = [
-    `${report.monthLabel} 주유 리포트(${report.fuel}, 연비 ${report.kmpl}km/L): 주유 ${report.fills}번, ${report.liters}L`,
+    `${report.monthLabel} 주유 리포트(${report.fuel}, 연비 ${report.kmpl}km/L): 주유 ${report.fills}번, ` +
+      (noLiters ? "넣은 양 모름" : `${report.liters}L`) +
+      (report.litersUnknownFills > 0 && !noLiters ? `(양을 모르는 주유 ${report.litersUnknownFills}번 뺌)` : ""),
     report.totalWon !== null ? `쓴 돈 ${won(report.totalWon)}원` : "쓴 돈 모름",
-    `추정 주행 ${won(report.estimatedKm)}km`,
+    noLiters ? "추정 주행 모름" : `추정 주행 ${won(report.estimatedKm)}km`,
   ];
   if (report.wonPerKm !== null) parts.push(`km당 ${report.wonPerKm}원`);
   if (report.vsArea) parts.push(`그날 ${report.vsArea.area} 평균 대비 ${signed(report.vsArea.savedWon, "원", "아낌", "더 씀")}`);
@@ -203,6 +224,8 @@ export function reportSummary(report: FuelReport) {
 
 export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceipt: () => void }) {
   const prev = report.previous;
+  // 금액만 적은 주유뿐이면 넣은 양과 주행거리를 모른다.
+  const noLiters = report.litersUnknownFills === report.fills;
   return (
     <div className={CARD}>
       <h2 className="text-sm font-semibold text-ink-soft">
@@ -232,11 +255,16 @@ export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceip
           {report.wonUnknownFills > 0 && (
             <p className="mt-1 text-xs text-ink-soft">금액을 모르는 주유 {report.wonUnknownFills}번은 빼고 더했어요.</p>
           )}
+          {report.litersUnknownFills > 0 && (
+            <p className="mt-1 text-xs text-ink-soft">
+              금액만 적은 주유 {report.litersUnknownFills}번은 넣은 양과 추정 주행에서 빠졌어요. 영수증 사진을 보내면 리터까지 기록돼요.
+            </p>
+          )}
           <dl className="mt-4 grid grid-cols-2 gap-3 tabular-nums">
             {[
               ["주유", `${report.fills}번`],
-              ["넣은 양", `${report.liters}L`],
-              ["추정 주행", `약 ${won(report.estimatedKm)}km`],
+              ["넣은 양", noLiters ? "모름" : `${report.liters}L`],
+              ["추정 주행", noLiters ? "모름" : `약 ${won(report.estimatedKm)}km`],
               ["1km당 기름값", report.wonPerKm !== null ? `${report.wonPerKm}원` : "모름"],
             ].map(([label, value]) => (
               <div key={label} className="rounded-2xl px-4 py-3 shadow-inset-sm">
@@ -254,7 +282,8 @@ export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceip
           )}
           {prev && (
             <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-              {prev.monthLabel}보다 {signed(prev.litersDiff, "L", "더 넣었고", "덜 넣었고")}
+              {prev.monthLabel}보다{" "}
+              {prev.litersDiff !== null ? signed(prev.litersDiff, "L", "더 넣었고", "덜 넣었고") : "넣은 양은 다 알지 못해 비교하지 않았고"}
               {prev.wonDiff !== null ? `, 기름값은 ${signed(prev.wonDiff, "원", "더 썼어요", "덜 썼어요")}.` : ", 지난달 금액은 다 알지 못해 비교하지 않았어요."}
             </p>
           )}
@@ -268,7 +297,9 @@ export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceip
                     {entry.stationName && <span className="ml-2 text-ink-soft">{entry.stationName}</span>}
                   </span>
                   <span className="shrink-0 text-right tabular-nums">
-                    {entry.liters}L{entry.paidWon !== null && ` · ${won(entry.paidWon)}원`}
+                    {[entry.liters !== null ? `${entry.liters}L` : null, entry.paidWon !== null ? `${won(entry.paidWon)}원` : null]
+                      .filter(Boolean)
+                      .join(" · ")}
                     {compared && (
                       <span className="block text-xs text-ink-soft">
                         {compared.averageDate === entry.date ? "그날" : `${monthDay(compared.averageDate)}`} 평균보다 리터당{" "}

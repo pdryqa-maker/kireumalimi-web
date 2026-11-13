@@ -19,12 +19,18 @@ export function addLedgerEntry(entry: LedgerEntry) {
   return ledgerStore.write(cleanLedger([...parseLedger(ledgerStore.read()).filter((item) => item.date !== entry.date), entry]));
 }
 
-// 장부에 주유 기록(날짜와 리터만, 장부가 생기기 전에 넣은 것이나 직접 넣은 것)을 합친다. 같은 날이면 장부 쪽을 쓴다.
+// 장부에 주유 기록(날짜와 금액이나 리터, 장부가 생기기 전에 넣은 것이나 직접 넣은 것)을 합친다. 같은 날이면 장부 쪽을 쓴다.
 export function mergeLedger(ledger: LedgerEntry[], fills: FillRecord[]): LedgerEntry[] {
   const dates = new Set(ledger.map((entry) => entry.date));
   const older = fills
     .filter((record) => !dates.has(record.date))
-    .map((record) => ({ date: record.date, liters: record.liters, pricePerLiter: null, totalWon: null, stationName: null }));
+    .map((record) => ({
+      date: record.date,
+      liters: record.liters ?? null,
+      pricePerLiter: null,
+      totalWon: record.won ?? null,
+      stationName: null,
+    }));
   return cleanLedger([...ledger, ...older]);
 }
 
