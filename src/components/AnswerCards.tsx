@@ -116,7 +116,7 @@ export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null
       )}
       <figure className="mt-4">
         <figcaption className="text-xs text-ink-soft">
-          실제 서비스는 종료 7일 전에 카카오톡으로 이렇게 보내요. 시제품은 보내지 않아요.
+          카카오톡 채널이 열리면 종료 7일 전에 이렇게 보내요. 지금은 미리보기예요.
         </figcaption>
         <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
           {message}
@@ -165,7 +165,7 @@ export function CapCard({
       </p>
       <dl className="mt-3 grid grid-cols-3 gap-3">
         {cap.fuels.map((item) => (
-          <div key={item.fuel} className={`rounded-2xl px-3 py-3 shadow-inset-sm ${item.fuel === cap.fuel ? "ring-2 ring-accent" : ""}`}>
+          <div key={item.fuel} className={`rounded-2xl px-3 py-3 shadow-inset-sm ${item.fuel === cap.fuel ? "ring-2 ring-flame" : ""}`}>
             <dt className="text-xs text-ink-soft">{fuelLabel(item.fuel)}</dt>
             <dd className="mt-1 text-lg font-bold whitespace-nowrap tabular-nums sm:text-xl">
               {won(item.capWon)}
@@ -204,7 +204,7 @@ export function CapCard({
       </div>
       <figure className="mt-4">
         <figcaption className="text-xs text-ink-soft">
-          실제 서비스는 발표 직후 카카오톡으로 이렇게 보내요. 시제품은 보내지 않아요.
+          카카오톡 채널이 열리면 발표 직후 이렇게 보내요. 지금은 미리보기예요.
         </figcaption>
         <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
           {capMessage(cap)}
@@ -267,7 +267,7 @@ export function AlertCard({
         <p className={`mt-4 w-fit ${TAG}`}>{STATUS_TEXT[status]}</p>
       )}
       <p className="mt-3 text-xs text-ink-soft">
-        시제품은 이 브라우저에만 저장하고, 확인할 때 오피넷 최저가와 맞춰 봐요. 실제 서비스는 조건에 닿으면 카카오톡으로
+        조건은 이 브라우저에만 저장하고, 확인할 때 오피넷 최저가와 맞춰 봐요. 카카오톡 채널이 열리면 조건에 닿을 때
         알려요.
       </p>
     </div>

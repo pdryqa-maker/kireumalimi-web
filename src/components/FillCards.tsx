@@ -2,7 +2,15 @@
 
 // 내 차 주유 예보: 주유 기록을 받는 카드와, 다음 주유 예상일·알림 미리보기 카드.
 import { useState } from "react";
-import { forecastNextFill, MAX_RECORDS, MIN_RECORDS, todayKst, type FillForecast, type FillRecord } from "@/lib/fillForecast";
+import {
+  addDays,
+  forecastNextFill,
+  MAX_RECORDS,
+  MIN_RECORDS,
+  todayKst,
+  type FillForecast,
+  type FillRecord,
+} from "@/lib/fillForecast";
 import { loadFills } from "@/lib/savedFills";
 import type { CostResult } from "./AnswerCards";
 import { dayWithWeekday, koreanTime, won } from "./format";
@@ -14,11 +22,6 @@ const BUTTON = "rounded-full px-4 py-2 text-sm font-semibold shadow-raised-sm ac
 
 type Row = { date: string; liters: string };
 
-function shift(date: string, days: number) {
-  const time = Date.parse(`${date}T00:00:00Z`) + days * 86_400_000;
-  return new Date(time).toISOString().slice(0, 10);
-}
-
 // 저장한 기록이 없으면 예시 기록을 채워 둔다. 이용자가 바꿔 쓰면 된다.
 function initialRows(): { rows: Row[]; example: boolean } {
   const saved = loadFills();
@@ -28,9 +31,9 @@ function initialRows(): { rows: Row[]; example: boolean } {
   const today = todayKst();
   return {
     rows: [
-      { date: shift(today, -15), liters: "40" },
-      { date: shift(today, -8), liters: "38" },
-      { date: shift(today, -1), liters: "40" },
+      { date: addDays(today, -15), liters: "40" },
+      { date: addDays(today, -8), liters: "38" },
+      { date: addDays(today, -1), liters: "40" },
     ],
     example: true,
   };
@@ -111,7 +114,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
         </p>
       )}
       <div className="mt-4 flex flex-wrap gap-3">
-        <button type="submit" disabled={busy} className={`${BUTTON} bg-accent`}>
+        <button type="submit" disabled={busy} className={`${BUTTON} bg-accent text-on-accent`}>
           다음 주유일 계산
         </button>
         {rows.length < MAX_RECORDS && (
@@ -120,7 +123,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
           </button>
         )}
       </div>
-      <p className="mt-3 text-xs text-ink-soft">시제품은 기록을 이 브라우저에만 저장해요.</p>
+      <p className="mt-3 text-xs text-ink-soft">기록은 이 브라우저에만 저장해요.</p>
     </form>
   );
 }
@@ -167,8 +170,8 @@ export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost:
       <figure className="mt-4">
         <figcaption className="text-xs text-ink-soft">
           {forecast.due
-            ? "실제 서비스는 오늘 카카오톡으로 한 번 이렇게 보내요. 시제품은 보내지 않아요."
-            : `실제 서비스는 ${dayWithWeekday(forecast.notifyOn)} 아침에 카카오톡으로 한 번 이렇게 보내요. 시제품은 보내지 않아요.`}
+            ? "카카오톡 채널이 열리면 오늘 한 번 이렇게 보내요. 지금은 미리보기예요."
+            : `카카오톡 채널이 열리면 ${dayWithWeekday(forecast.notifyOn)} 아침에 한 번 이렇게 보내요. 지금은 미리보기예요.`}
         </figcaption>
         <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
           {forecastMessage(forecast, cost)}

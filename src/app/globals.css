@@ -1,14 +1,18 @@
 @import "tailwindcss";
 
-/* 하나의 재질(따뜻한 돌회색) 위에 빛과 그림자로 눌림·솟음을 표현한다. 강조색은 팀 로고의 노랑 하나뿐이다. */
+/* 흰 바탕에 가는 테두리로 면을 나눈다. 주요 버튼은 먹색, 불꽃색(한국석유공사 로고의 빨강~주황)은 구슬과 켜짐 표시에만 쓴다. */
 :root {
-  --ground: #e4e2da;
-  --ink: #1b1c18;
-  --ink-soft: #57574d;
-  --accent: #ffd95a;
-  --hairline: #cfccc1;
-  --shade: 160 154 136;
-  --light: 255 255 252;
+  --ground: #ffffff;
+  --canvas: #f4f5f7;
+  --ink: #15171c;
+  --ink-soft: #5c6270;
+  --accent: #15171c;
+  --on-accent: #ffffff;
+  --flame: #e8470f;
+  --flame-soft: #fff1e8;
+  --hairline: #e3e5ea;
+  --shade: 21 23 28;
+  --light: 255 255 255;
 }
 
 @theme inline {
@@ -16,15 +20,19 @@
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-canvas: var(--canvas);
+  --color-flame: var(--flame);
+  --color-flame-soft: var(--flame-soft);
   --color-hairline: var(--hairline);
   --color-background: var(--ground);
   --color-foreground: var(--ink);
   --font-sans: var(--font-pretendard), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 
-  --shadow-raised: 9px 9px 20px rgb(var(--shade) / 0.5), -9px -9px 20px rgb(var(--light) / 0.9);
-  --shadow-raised-sm: 4px 4px 10px rgb(var(--shade) / 0.5), -4px -4px 10px rgb(var(--light) / 0.9);
-  --shadow-inset: inset 4px 4px 9px rgb(var(--shade) / 0.45), inset -4px -4px 9px rgb(var(--light) / 0.85);
-  --shadow-inset-sm: inset 2px 2px 5px rgb(var(--shade) / 0.45), inset -2px -2px 5px rgb(var(--light) / 0.85);
+  --shadow-raised: 0 0 0 1px var(--hairline), 0 10px 28px -16px rgb(var(--shade) / 0.22);
+  --shadow-raised-sm: 0 0 0 1px var(--hairline), 0 1px 2px rgb(var(--shade) / 0.06);
+  --shadow-inset: inset 0 0 0 1px var(--hairline), inset 0 1px 2px rgb(var(--shade) / 0.05);
+  --shadow-inset-sm: inset 0 0 0 1px var(--hairline);
 
   --animate-rise: rise 280ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-press: press 280ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -34,8 +42,8 @@
 /* 답변은 표면에서 솟아오르고, 질문은 표면으로 눌려 들어간다. 둘 다 처음부터 보이는 상태에서 시작한다. */
 @keyframes rise {
   from {
-    transform: translateY(3px);
-    box-shadow: 1px 1px 2px rgb(var(--shade) / 0.3), -1px -1px 2px rgb(var(--light) / 0.6);
+    transform: translateY(4px);
+    opacity: 0;
   }
 }
 
@@ -64,7 +72,7 @@ body {
 }
 
 ::selection {
-  background: var(--accent);
+  background: var(--flame-soft);
   color: var(--ink);
 }
 
@@ -86,13 +94,33 @@ body {
   display: none;
 }
 
-/* 스켈레톤: 표면에 판 홈이 은은하게 빛을 받는다. */
+/* 스켈레톤: 회색 줄 위로 빛이 지나간다. */
 .groove {
   border-radius: 9999px;
-  box-shadow: var(--shadow-inset-sm);
-  background: linear-gradient(100deg, transparent 30%, rgb(var(--light) / 0.75) 50%, transparent 70%) var(--ground);
+  background: linear-gradient(100deg, transparent 30%, rgb(var(--light) / 0.85) 50%, transparent 70%) var(--canvas);
   background-size: 220% 100%;
   animation: var(--animate-groove);
+}
+
+/* 불꽃 구슬: 한국석유공사 로고의 빨강에서 주황으로 번지는 빛. 첫 화면의 한 가지 강조이자 챗봇의 얼굴이다. */
+.flame-orb {
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 34% 28%, #fff8ec 0%, rgb(255 248 236 / 0) 26%),
+    radial-gradient(circle at 50% 58%, #ffb347 0%, #f57c1f 38%, #e8470f 66%, #b92c0c 100%);
+  box-shadow:
+    0 18px 40px -14px rgb(232 71 15 / 0.55),
+    inset 0 -6px 14px rgb(140 30 6 / 0.25);
+}
+
+.flame-orb-glow {
+  animation: breathe 5.5s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    transform: scale(1.045);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

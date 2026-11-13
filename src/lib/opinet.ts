@@ -9,7 +9,11 @@ const cache = new Map<string, { expires: number; body: unknown; fetchedAt: strin
 export class OpinetError extends Error {}
 
 // 응답과 함께 오피넷에서 실제로 받아 온 시각(ISO)을 돌려준다. 캐시에서 꺼내도 처음 받은 시각이다.
-export async function fetchOpinetTimed(endpoint: string, query: Record<string, string> | URLSearchParams) {
+export async function fetchOpinetTimed(
+  endpoint: string,
+  query: Record<string, string> | URLSearchParams,
+  cacheMs = CACHE_MS,
+) {
   const key = process.env.OPINET_API_KEY;
   if (!key) {
     throw new OpinetError("OPINET_API_KEY가 설정되지 않았습니다.");
@@ -44,7 +48,7 @@ export async function fetchOpinetTimed(endpoint: string, query: Record<string, s
     throw new OpinetError("오피넷 호출에 실패했습니다.");
   }
   const fetchedAt = new Date().toISOString();
-  cache.set(cacheKey, { expires: Date.now() + CACHE_MS, body, fetchedAt });
+  cache.set(cacheKey, { expires: Date.now() + cacheMs, body, fetchedAt });
   return { body, fetchedAt };
 }
 

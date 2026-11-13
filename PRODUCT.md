@@ -37,7 +37,8 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 - Working now: 울산 최저가 lookup (`lowTop10`), station detail with 기준 시각 (`detailById`), the fixed question "지난 고시 뒤 우리 동네는?" from aggregated past-price data, and a Claude (Opus 5.5) chatbot that calls those lookups as tools.
 - Added 2026-11-13: 실질비용 ranking from a 울주군 읍면 start point (`aroundAll`, straight-line round trip), a 유류세 인하 alert preview combining 언제·어디서·얼마 (official values in `src/lib/policy.ts`: extended to 2027-01-31), price-alert conditions the AI proposes and the user saves in the browser, a server-side number check on AI answers, card summaries in chat history, and per-visitor call limits.
 - Added 2026-11-13 (second pass): a 최고가격 notice explainer shown right after each announcement (values in `src/lib/policy.ts` `PRICE_CAP`), 내 차 주유 예보 from 2–5 fill records (interval average, no price prediction; records kept in the browser), and links from `/kerosene` and the chatbot to 등유 안심.
-- Not built here on purpose: 화물차 보조금 단가, 면세유, and research-institute estimates (official values not verified, or not official); Kakao delivery (prototype shows message previews only); road distance (straight-line only).
+- Added 2026-11-13 (third pass): a bright white redesign (left menu on desktop, bottom tabs on phones) with a personalized home; 간편 로그인 that keeps name, location and car only in the browser (no password); nationwide "my location" lookups (phone location converted to KATEC, rounded to 100 m, or an 오피넷 area code); the chatbot prompt and tools follow the saved profile (coordinates never go to the AI); and `/alerts`, where users set price, 최고가격, 유류세 and 주유 예보 conditions and see which alerts they would get and when.
+- Not built here on purpose: real Kakao login and account storage (needs a Kakao app, keys on the teammate's Vercel, and a database), address search (needs a geocoding key), 화물차 보조금 단가, 면세유, and research-institute estimates (official values not verified, or not official); Kakao delivery (prototype shows message previews only); road distance (straight-line only).
 - API keys (오피넷, Claude) stay server-side in `.env.local`; the repository is public.
 - The Vercel deployment is public; `src/lib/rateLimit.ts` caps calls per visitor and per server instance.
 - 오피넷 general key is limited to 300 calls a day; chatbot answers take about 5–12 seconds.
@@ -47,9 +48,9 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 ## Brand Commitments
 
 - Service name: 기름알리미.
-- Footer on every screen: "유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 시제품".
+- Footer on every screen: "유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이" ('시제품' dropped on 2026-11-13 at 배재원's request; screens still say plainly when something is only a preview).
 - Team logo of 유일무이 must appear. Assets: `10월/인스타그램 게시물 레퍼런스/유일무이 로고.png` (yellow "1" with oil drop on black circle), `유일무이 로고_2.png` (black 유일무이 wordmark with 油一無二), `유일무이 로고_3.png` (black "1" on yellow circle).
-- Do not imitate 오피넷 or 한국석유공사 logos, colors, or page design.
+- 한국석유공사 logo: shown in the header as the supporters-program mark, using the original file unchanged (2026-11-13, 배재원's request; needs team confirmation). The flame accent takes its red-orange from that logo. Do not imitate 오피넷 pages or logos.
 - Voice: polite Korean 존댓말, short, no hype; never accuse stations of wrongdoing ("아직 그대로", not "늦게 내린").
 
 ## Evidence on Hand
