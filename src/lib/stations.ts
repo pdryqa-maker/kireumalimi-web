@@ -306,7 +306,7 @@ const RADIUS_M = 5000; // 오피넷 반경 조회의 최대값
 // 출발 위치: 울주군 읍면 키(PLACES) 또는 이용자 위치(이름과 KATEC 좌표).
 export type Origin = string | { name: string; x: number; y: number };
 
-function resolveOrigin(origin: Origin) {
+export function resolveOrigin(origin: Origin) {
   if (typeof origin === "string") return PLACES[origin] ?? null;
   return origin.name && isKatec(origin.x, origin.y) ? origin : null;
 }

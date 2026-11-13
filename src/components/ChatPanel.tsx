@@ -735,6 +735,7 @@ export default function ChatPanel({
   const lastStation = mounted ? ledger.findLast((entry) => entry.stationName)?.stationName : null;
   const trustQuestion = lastStation ? `${lastStation} 믿을 만한지 점검해 줘` : "단골 주유소 믿을 만한지 점검해 줘";
   const alttleQuestion = `${homeArea.name} 알뜰주유소, 진짜 싼 거 맞아?`;
+  const highwayQuestion = `${placeName}에서 서울 가는 길, 휴게소 어디서 넣을까?`;
   // 탭마다 시작 질문(큰 카드 4개와 작은 칩)이 다르다. 대화 중 입력창 위에도 같은 질문을 둔다.
   const starters: Record<ChatSection, { cards: Starter[]; chips: Starter[] }> = {
     home: {
@@ -757,6 +758,7 @@ export default function ChatPanel({
         { label: UREA_QUESTION, onClick: () => askFree(UREA_QUESTION), Icon: DropIcon },
       ],
       chips: [
+        { label: highwayQuestion, onClick: () => askFree(highwayQuestion) },
         { label: STANDING_QUESTION, onClick: () => askFree(STANDING_QUESTION) },
         { label: alttleQuestion, onClick: () => askFree(alttleQuestion) },
       ],
@@ -803,7 +805,7 @@ export default function ChatPanel({
               </h1>
               <p className="mt-2 text-ink-soft text-pretty">
                 {section === "explore"
-                  ? "가까운 최저가부터 믿을 만한 곳, 요소수 재고까지 물어보세요."
+                  ? "가까운 최저가부터 믿을 만한 곳, 요소수 재고, 고속도로 휴게소까지 물어보세요."
                   : records.length > 0
                     ? `주유 기록 ${records.length}번 · 가장 최근 ${dayWithWeekday(records.at(-1)!.date)}`
                     : "영수증 사진을 보내면 주유 기록이 쌓이고, 달마다 리포트로 모아 드려요."}

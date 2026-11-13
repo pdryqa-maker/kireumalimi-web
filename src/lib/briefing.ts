@@ -60,6 +60,10 @@ function sameSince(fuel: string) {
   return { round: rounds[index].round, startsOn: rounds[index].startsOn };
 }
 
+// 국제유가는 따로 다루지 않고 가격 해설에 숫자 없는 이 한 줄만 붙인다. 더 물으면 오피넷 국제유가 메뉴를 안내한다.
+export const LAG_NOTE = "국내 판매가는 보통 국제유가와 환율 변화를 2~3주 늦게 따라갑니다.";
+export const INTERNATIONAL_MORE = "국제유가와 환율 추이는 오피넷(www.opinet.co.kr)의 국제유가 메뉴에서 볼 수 있습니다.";
+
 // 가격 해설: 내 지역 평균이 어제보다, 전국 평균이 지난 7일 동안 얼마나 움직였는지와
 // 그 기간에 정해져 있던 제도(최고가격, 유류세 인하)를 한데 모은다. 원인을 단정하지 않고 이 값들로만 설명하게 한다.
 export async function priceStory(fuel: string, area: string | null) {
@@ -114,6 +118,8 @@ export async function priceStory(fuel: string, area: string | null) {
     fuelTaxCut: tax
       ? { endsOn: FUEL_TAX_CUT.endsOn, decidedOn: FUEL_TAX_CUT.decidedOn, wonPerLiter: tax.wonPerLiter, note: "인하 중이라 지금 가격에 이미 반영돼 있습니다." }
       : null,
-    note: "국제유가나 환율처럼 이 결과에 없는 원인은 말하지 않습니다. 앞으로의 가격도 예측하지 않습니다.",
+    internationalNote: LAG_NOTE,
+    internationalMore: INTERNATIONAL_MORE,
+    note: "국제유가나 환율은 internationalNote 한 줄만 말하고, 그 수치나 이 결과에 없는 다른 원인은 말하지 않습니다. 앞으로의 가격도 예측하지 않습니다.",
   };
 }
