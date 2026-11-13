@@ -147,12 +147,10 @@ export function capMessage(cap: CapNotice) {
 
 export function CapCard({
   cap,
-  kerosene,
   onPastNotice,
   busy,
 }: {
   cap: CapNotice;
-  kerosene: { name: string; href: string };
   onPastNotice: () => void;
   busy: boolean;
 }) {
@@ -195,12 +193,6 @@ export function CapCard({
         >
           지난 고시 뒤 우리 동네는?
         </button>
-        <a
-          href={kerosene.href}
-          className="rounded-full px-4 py-2 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm"
-        >
-          등유 가구 안내는 {kerosene.name}
-        </a>
       </div>
       <figure className="mt-4">
         <figcaption className="text-xs text-ink-soft">

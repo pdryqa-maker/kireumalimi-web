@@ -22,14 +22,6 @@ export const BellIcon = (props: IconProps) => (
   </Svg>
 );
 
-export const HomeHeatIcon = (props: IconProps) => (
-  <Svg {...props}>
-    <path d="M3.5 11 12 4l8.5 7" />
-    <path d="M5.5 9.5V20h13V9.5" />
-    <path d="M12 17.5c-1.4 0-2.3-1-2.3-2.2 0-1.5 1.3-2.3 2.3-3.8 1 1.5 2.3 2.3 2.3 3.8 0 1.2-.9 2.2-2.3 2.2" />
-  </Svg>
-);
-
 export const UserIcon = (props: IconProps) => (
   <Svg {...props}>
     <circle cx="12" cy="8.5" r="3.5" />

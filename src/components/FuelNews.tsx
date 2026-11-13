@@ -11,7 +11,7 @@ import { fuelName } from "@/lib/profile";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
 import { BellIcon, CalendarIcon, PinIcon, PumpIcon, ReceiptIcon } from "./icons";
 
-const LOAD_ERROR = "가격 소식을 불러오지 못했어요.";
+const LOAD_ERROR = "가격 소식을 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.";
 
 export type BriefingState = { key: string; data: FuelBriefing | null; error: string };
 
@@ -25,7 +25,8 @@ export function useBriefing(fuel: string, area: string | null, enabled: boolean)
     fetch(`/api/briefing?${params}`)
       .then(async (response) => {
         const body = await response.json().catch(() => null);
-        if (alive) setState(response.ok && body ? { key, data: body, error: "" } : { key, data: null, error: body?.error ?? LOAD_ERROR });
+        // 서버 오류 문구(설정 누락 등)는 이용자에게 보이지 않고 정해진 안내만 보여 준다.
+        if (alive) setState(response.ok && body ? { key, data: body, error: "" } : { key, data: null, error: LOAD_ERROR });
       })
       .catch(() => {
         if (alive) setState({ key, data: null, error: LOAD_ERROR });

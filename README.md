@@ -23,7 +23,6 @@ http://localhost:3000 에서 확인합니다.
 | 화면 | 담당 | 위치 |
 |---|---|---|
 | 첫 화면, 화면 틀(왼쪽 메뉴·아래 탭·머리글) | 공통, 배재원 | `src/app/page.tsx`, `src/app/layout.tsx`, `src/components/AppShell.tsx` |
-| 등유 안심 | 김형준, 목서환 | `src/app/kerosene/` |
 | 주유 챗봇 | 지현민, 배재원 | `src/app/chat/`, `src/components/ChatPanel.tsx` |
 | 고정 질문 API | 지현민 | `src/app/api/fixed-question/` |
 | 오피넷 API 프록시 | 지현민 | `src/app/api/opinet/[endpoint]/`, `src/lib/opinet.ts` |
@@ -34,7 +33,7 @@ http://localhost:3000 에서 확인합니다.
 | 가격 알림 조건(AI가 제안, 이용자가 저장) | 배재원 | `src/lib/savedAlerts.ts`, `src/lib/chatbot.ts`의 `propose_price_alert` |
 | 최고가격 고시 해설(발표 직후 해설) | 배재원 | `src/lib/policy.ts`의 `PRICE_CAP`, `src/components/AnswerCards.tsx`의 `CapCard` |
 | 내 차 주유 예보(주유 기록으로 다음 주유일) | 배재원 | `src/lib/fillForecast.ts`, `src/components/FillCards.tsx` |
-| 등유 안심 연결 | 배재원 | `src/lib/kerosene.ts`, `src/app/kerosene/` |
+| 등유 안심 안내(챗봇이 등유 가구 질문을 넘김) | 배재원 | `src/lib/kerosene.ts`, `src/lib/chatbot.ts` |
 | 간편 로그인·내 정보(이름, 위치, 차) | 배재원 | `src/lib/profile.ts`, `src/components/LoginForm.tsx`, `src/app/login/` |
 | 오늘의 기름 소식(전국·내 지역 평균가, 제도 일정) | 배재원 | `src/lib/briefing.ts`, `src/components/FuelNews.tsx`, `src/app/api/briefing/` |
 | 내 위치 조회(전국, 휴대폰 위치 → 오피넷 좌표) | 배재원 | `src/lib/katec.ts`, `src/lib/origin.ts`, `src/lib/stations.ts`의 `findNearby`·`areaList`·`areaAt`, `src/app/api/stations/nearby/`, `src/app/api/areas/` |
@@ -67,7 +66,7 @@ http://localhost:3000 에서 확인합니다.
 - **숫자 대조**: AI 답변 속 숫자가 도구 결과나 대화에 이미 나온 값에 없으면 한 번 다시 쓰게 하고, 그래도 다르면 답을 보내지 않습니다. 통과한 답에는 "숫자 n개 · 조회 결과와 대조해 일치"가 붙습니다.
 - **최고가격 고시 해설**: 최고가격은 정해진 종료일이 없어 미리 알리지 않고, 발표 직후 차수·적용일·유종별 상한과 직전 차수 대비 변화를 쉬운 말로 풀어 줍니다. 공급가 상한이지 판매가 상한이 아니라는 점을 함께 밝힙니다.
 - **내 차 주유 예보**: 주유 기록(날짜, 리터) 2~5개의 간격 평균으로 다음 주유 예상일을 셈하고, 그 주 월요일 아침에 한 번 보낼 알림(거리까지 따진 추천 포함)을 미리 보여 줍니다. 가격은 예측하지 않습니다. 기록은 이 브라우저에만 저장합니다.
-- **등유 안심 연결**: 등유 보일러 가구(소진 예측, AI 전화, 판매소, 군 현황판)는 같은 팀의 [등유 안심](https://deungyu-alimi.vercel.app)이 맡습니다. `/kerosene`에서 그 화면으로 이어 주고, 챗봇도 등유 배달·바우처·한파 질문은 등유 안심으로 안내합니다.
+- **등유 안심 연결**: 등유 보일러 가구(소진 예측, AI 전화, 판매소, 군 현황판)는 같은 팀의 [등유 안심](https://deungyu-alimi.vercel.app)이 맡습니다. 두 서비스는 나중에 상위 사이트에서 함께 묶을 예정이라, 기름알리미에는 등유 안심 메뉴를 두지 않습니다(2026-11-13 뺌). 챗봇은 등유 배달·바우처·한파 질문을 받으면 등유 안심을 안내합니다.
 - **간편 로그인과 개인화**: 부를 이름, 내 위치, 내 차(유종, 한 번에 넣는 양, 연비)를 받아 이 브라우저에만 저장합니다. 비밀번호는 받지 않습니다(실제 서비스는 카카오 로그인으로 제안). 로그인하면 첫 화면 인사와 추천 질문, 출발 위치, 유종·주유량이 내 정보로 바뀌고, 자유 질문 때 서버가 내 정보를 다시 검사해 AI 지시문에 넣습니다. 정확한 좌표는 AI에 보내지 않고 주유소 조회에만 씁니다. 위치는 두 가지로 정합니다. '현재 위치로 찾기'는 휴대폰 위치를 받아 가장 가까운 주유소의 시군구(오피넷 상세 정보의 SIGUNCD)로 내 지역까지 함께 채우고, '직접 입력하기'는 시도·시군구를 고릅니다.
 - **오늘의 기름 소식**: 첫 화면에 내 지역과 전국의 내 유종 평균 가격(오피넷 `avgSigunPrice`·`avgSidoPrice`·`avgAllPrice`)이 어제보다 얼마나 움직였는지, 지금 적용 중인 석유 최고가격 차수, 유류세 인하가 며칠 남았는지, 로그인했다면 다음에 받을 알림을 보여 줍니다. 맨 위 한 줄은 그중 가장 먼저 알아야 할 소식(최고가격 새 고시 적용 직전, 유류세 인하 종료 14일 안, 아니면 내 지역 평균가 움직임)입니다. 평균가는 1시간 동안 재사용합니다. 뉴스 기사는 쓰지 않습니다.
 - **내 위치(전국)**: 휴대폰 위치(위경도)를 오피넷 좌표(KATEC)로 바꿔 반경 5km 조회를 합니다. 위치는 100m 단위로 줄여 저장합니다. 위치를 쓰지 않으면 오피넷 지역코드로 시도·시군구를 골라 그 지역 최저가를 봅니다.

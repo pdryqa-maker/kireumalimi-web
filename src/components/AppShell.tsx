@@ -5,13 +5,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signedIn } from "@/lib/profile";
-import { BellIcon, ChatIcon, HomeHeatIcon, UserIcon } from "./icons";
+import { BellIcon, ChatIcon, UserIcon } from "./icons";
 import { useMounted, useProfile } from "./useStored";
 
 const NAV = [
   { href: "/", label: "주유 챗봇", Icon: ChatIcon },
   { href: "/alerts", label: "내 알림", Icon: BellIcon },
-  { href: "/kerosene", label: "등유 안심", Icon: HomeHeatIcon },
   { href: "/login", label: "내 정보", Icon: UserIcon },
 ];
 

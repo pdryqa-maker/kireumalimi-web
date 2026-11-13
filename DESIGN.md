@@ -44,8 +44,8 @@ Rewritten on 2026-11-13 when the screen moved from the stone neumorphic console 
 
 **North star: "A clear morning forecourt."** White paper, thin grey lines, and one warm flame. The screen should feel like asking a calm attendant who already knows your car and your street.
 
-- Desktop: a 5.5rem left menu (team mark, 주유 챗봇, 내 알림, 등유 안심, 내 정보, avatar at the bottom), a slim header (한국석유공사 logo, 기름알리미, login or the user's avatar; no place chip, since the home summary already shows 내 위치), and one centered 48rem column.
-- Phone: the same header, content, and a floating pill tab bar at the bottom with the same four destinations.
+- Desktop: a 5.5rem left menu (team mark, 주유 챗봇, 내 알림, 내 정보, avatar at the bottom; 등유 안심 was removed on 2026-11-13 because both apps will sit under a parent site later), a slim header (한국석유공사 logo, 기름알리미, login or the user's avatar; no place chip, since the home summary already shows 내 위치), and one centered 48rem column.
+- Phone: the same header, content, and a floating pill tab bar at the bottom with the same three destinations.
 - The chat home opens with the flame orb, one line of today's top fuel news with the user's name first ("재원님, 내일부터 12차 석유 최고가격이 적용돼요"; a plain greeting only if the news has not loaded), "기름 넣으러 가세요?", the 오늘의 기름 소식 panel (my area and nationwide average price with the change since yesterday, the current 최고가격 round, days left in the 유류세 cut, and the next alert for signed-in users; two columns even on phones), a one-line login prompt for guests, four question cards with icons, and a row of chips.
 
 ## Colors
