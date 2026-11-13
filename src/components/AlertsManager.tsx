@@ -15,7 +15,6 @@ import { FillLogCard } from "./FillCards";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
 import { useMounted, useProfile, useStored } from "./useStored";
 
-const PANEL = "rounded-[2rem] bg-ground p-6 shadow-raised sm:p-8";
 const SELECT =
   "appearance-none rounded-full bg-ground py-1.5 pr-8 pl-3.5 text-sm font-semibold shadow-inset-sm focus-visible:outline-offset-1";
 const BUTTON = "rounded-full px-4 py-2 text-sm font-semibold shadow-raised-sm active:shadow-inset-sm disabled:opacity-50";
@@ -164,15 +163,17 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
   const waiting = notices.filter((notice) => !planned.some((plan) => plan.id === notice.id));
 
   return (
-    <div className="space-y-6">
-      <section aria-labelledby="alerts-title" className={PANEL}>
-        <p className="text-sm font-semibold text-ink-soft">내 알림</p>
-        <h1 id="alerts-title" className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
-          내 알림 조건
-        </h1>
-        <p className="mt-3 leading-relaxed text-balance">
-          원하는 조건을 미리 걸어 두면, 조건에 맞을 때만 알려 드려요. 가격을 매번 찾아보지 않아도 돼요.
-        </p>
+    <div className="mx-auto w-full max-w-xl pt-4 pb-10">
+      <section aria-labelledby="alerts-title">
+        <div className="flex items-center gap-4">
+          <span aria-hidden="true" className="flame-orb size-12 shrink-0" />
+          <div>
+            <h1 id="alerts-title" className="text-2xl font-bold tracking-tight sm:text-3xl">
+              내 알림 조건
+            </h1>
+            <p className="mt-1 text-ink-soft">조건에 맞을 때만 알려 드려요. 가격을 매번 찾아보지 않아도 돼요.</p>
+          </div>
+        </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-canvas px-4 py-3">
           <span className="text-sm">
@@ -187,7 +188,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
           </Link>
         </div>
 
-        <h2 className="mt-8 text-sm font-semibold text-ink-soft">가격 조건</h2>
+        <h2 className="mt-8 text-base font-semibold">가격 조건</h2>
         <form onSubmit={addPrice} className="mt-2.5 flex flex-wrap items-center gap-2.5" aria-label="가격 조건 추가">
           <Select label="가격 조건 유종" value={priceFuel} options={PRICE_FUELS.map((fuel) => [fuel, fuelName(fuel)])} onChange={setPriceFuel} />
           <Select label="가격 조건 지역" value={area} options={Object.entries(areaOptions)} onChange={setArea} />
@@ -224,7 +225,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
         {mounted && alerts.length > 0 && (
           <ul className="mt-3 space-y-2.5">
             {alerts.map((alert) => (
-              <li key={alert.id} className="flex items-center gap-2.5 rounded-2xl px-4 py-3 shadow-inset-sm">
+              <li key={alert.id} className="flex items-center gap-2.5 rounded-2xl bg-canvas px-4 py-3">
                 <span className="flex-1 font-semibold">
                   {alert.areaName} {alert.fuel} <span className="tabular-nums">{won(alert.belowWon)}</span>원 이하
                 </span>
@@ -240,9 +241,9 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
           </ul>
         )}
 
-        <h2 className="mt-8 text-sm font-semibold text-ink-soft">제도·예보 조건</h2>
-        <ul className="mt-2.5 space-y-3">
-          <li className="flex items-start gap-4 rounded-2xl px-4 py-3.5 shadow-inset-sm">
+        <h2 className="mt-8 text-base font-semibold">제도·예보 조건</h2>
+        <ul className="mt-1 divide-y divide-hairline border-b border-hairline">
+          <li className="flex items-start gap-4 py-4">
             <div className="flex-1">
               <p className="font-semibold">석유 최고가격 새 고시 발표 직후</p>
               <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
@@ -252,7 +253,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
             </div>
             <Switch label="석유 최고가격 새 고시 알림" checked={mounted && watch.cap} onChange={(cap) => change({ cap })} />
           </li>
-          <li className="flex items-start gap-4 rounded-2xl px-4 py-3.5 shadow-inset-sm">
+          <li className="flex items-start gap-4 py-4">
             <div className="flex-1">
               <p className="font-semibold">유류세 인하 종료 {RULES.taxLeadDays}일 전</p>
               <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
@@ -261,7 +262,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
             </div>
             <Switch label="유류세 인하 종료 알림" checked={mounted && watch.tax} onChange={(tax) => change({ tax })} />
           </li>
-          <li className="flex items-start gap-4 rounded-2xl px-4 py-3.5 shadow-inset-sm">
+          <li className="flex items-start gap-4 py-4">
             <div className="flex-1">
               <p className="font-semibold">내 차 주유 예보</p>
               <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
@@ -289,7 +290,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
         )}
       </section>
 
-      <section aria-labelledby="plan-title" className={PANEL}>
+      <section aria-labelledby="plan-title" className="mt-10">
         <div className="flex flex-wrap items-center gap-3">
           <h2 id="plan-title" className="flex-1 text-xl font-bold tracking-tight">
             받을 알림
@@ -305,7 +306,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
         </p>
 
         {mounted && notices.length === 0 && (
-          <p className="mt-5 rounded-2xl px-4 py-4 text-center text-sm text-ink-soft shadow-inset-sm">
+          <p className="mt-5 rounded-2xl bg-canvas px-4 py-4 text-center text-sm text-ink-soft">
             위에서 조건을 걸면, 받게 될 알림이 여기에 나와요.
           </p>
         )}
@@ -333,7 +334,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
             <h3 className="mt-7 text-sm font-semibold text-ink-soft">조건을 기다리는 중</h3>
             <ul className="mt-2.5 space-y-2.5">
               {waiting.map((notice) => (
-                <li key={notice.id} className="rounded-2xl px-4 py-3 shadow-inset-sm">
+                <li key={notice.id} className="rounded-2xl bg-canvas px-4 py-3">
                   <p className="font-semibold">{notice.title}</p>
                   <p className="mt-0.5 text-sm text-ink-soft">{notice.state}</p>
                 </li>
@@ -353,7 +354,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
         </p>
       </section>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="mt-10 flex flex-wrap gap-3">
         <Link href="/" className="rounded-full px-5 py-2.5 text-ink-soft shadow-raised-sm active:shadow-inset-sm">
           주유 챗봇으로 돌아가기
         </Link>
