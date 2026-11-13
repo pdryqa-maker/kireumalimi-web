@@ -2,6 +2,7 @@
 import { fetchOpinet, fetchOpinetTimed } from "@/lib/opinet";
 import { PLACES } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
+import type { LedgerEntry } from "@/lib/ledger";
 import { isKatec } from "@/lib/profile";
 
 export const FUEL_CODES: Record<string, string> = {
@@ -424,5 +425,152 @@ export async function findByTotalCost(fuel: string, origin: Origin, liters = DEF
     extraForCheapestWon: cheapest.totalWon - best.totalWon,
     // 1km 더 멀면(왕복 2km) 드는 연료비를 주유량으로 나눈 값. 리터당 이만큼 싸야 더 가는 보람이 있다.
     breakEvenWonPerKm: Math.round(((2 / kmpl) * best.price) / liters),
+  };
+}
+
+// 영수증 이름과 오피넷 이름 맞추기. 회사 표시와 띄어쓰기를 빼고 한쪽이 다른 쪽을 품으면 같은 주유소로 본다.
+const coreName = (name: string) =>
+  name
+    .replace(/\(주\)|㈜|주식회사|\(유\)|유한회사|\(합\)|\s+/g, "")
+    .replace(/주유소$/, "");
+
+function sameStation(receiptName: string, stationName: string) {
+  const a = coreName(receiptName);
+  const b = coreName(stationName);
+  return a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a));
+}
+
+const BIG_GAP_WON = 100;
+
+// 주유소 점검: 공개 정보(품질인증, 착한주유소, 가격 보고일, 주변 가격)와 내 영수증을 맞춰 본다.
+// 의심을 단정하지 않는다. 확인해 볼 만한 점만 알려 준다.
+export async function stationTrust(id: string, fuel: string, ledger: LedgerEntry[], today: string) {
+  const standing = await stationStanding(id, fuel);
+  if ("error" in standing) return standing;
+  const [row] = rows(await fetchOpinet("detailById", { id }));
+  const priceRow = ((row?.OIL_PRICE as unknown as Row[] | undefined) ?? []).find(
+    (item) => String(item.PRODCD) === FUEL_CODES[fuel],
+  );
+  const changedDt = String(priceRow?.TRADE_DT ?? "");
+  const priceChangedOn = /^\d{8}$/.test(changedDt)
+    ? `${changedDt.slice(0, 4)}-${changedDt.slice(4, 6)}-${changedDt.slice(6, 8)}`
+    : null;
+  const { station, areaAverage, nearby } = standing;
+
+  // 내 영수증 가운데 이 주유소 것. 가격을 마지막으로 바꾼 날 뒤의 영수증만 지금 보고 가격과 비교할 수 있다.
+  const receipts = ledger
+    .filter((entry) => entry.stationName && sameStation(entry.stationName, station.name))
+    .map((entry) => {
+      const base = { date: entry.date, liters: entry.liters, receiptPricePerLiter: entry.pricePerLiter };
+      if (entry.pricePerLiter === null) return { ...base, comparable: false, reason: "영수증에서 단가를 읽지 못함" };
+      if (!priceChangedOn || entry.date <= priceChangedOn) {
+        return { ...base, comparable: false, reason: "그 뒤에 보고 가격이 바뀌어 그때 보고 가격을 알 수 없음" };
+      }
+      return {
+        ...base,
+        comparable: true,
+        reportedPrice: station.price,
+        // +면 영수증 단가가 보고 가격보다 비쌈
+        diffWon: entry.pricePerLiter - station.price,
+      };
+    });
+  const higher = receipts.filter((item) => "diffWon" in item && (item.diffWon ?? 0) > 0);
+
+  const checks = [
+    {
+      item: "석유관리원 품질인증",
+      ok: row?.KPETRO_YN === "Y",
+      result: row?.KPETRO_YN === "Y" ? "인증 주유소" : "인증 주유소 아님(인증이 없다고 품질이 나쁘다는 뜻은 아님)",
+    },
+    { item: "착한주유소", ok: station.goodStation, result: station.goodStation ? "지정됨" : "지정 안 됨" },
+    {
+      item: "가격 보고",
+      ok: priceChangedOn !== null,
+      result: priceChangedOn ? `${priceChangedOn}에 마지막으로 바꿔 보고` : "보고일 없음",
+    },
+  ];
+  if (areaAverage) {
+    const gap = areaAverage.diffWon;
+    checks.push({
+      item: "시군구 평균과 비교",
+      ok: Math.abs(gap) < BIG_GAP_WON,
+      result:
+        gap <= -BIG_GAP_WON
+          ? `평균보다 ${BIG_GAP_WON}원 넘게 쌈. 현장 가격과 영수증 단가를 확인해 볼 만함`
+          : gap >= BIG_GAP_WON
+            ? `평균보다 ${BIG_GAP_WON}원 넘게 비쌈`
+            : `평균과 ${BIG_GAP_WON}원 안쪽 차이`,
+    });
+  }
+  if (receipts.length > 0) {
+    checks.push({
+      item: "내 영수증과 보고 가격",
+      ok: higher.length === 0,
+      result:
+        higher.length > 0
+          ? `영수증 ${higher.length}장의 단가가 보고 가격보다 비쌌음. 셀프/일반 주유 차이나 할인 전 금액인지 확인해 볼 만함`
+          : receipts.some((item) => item.comparable)
+            ? "비교한 영수증 단가가 보고 가격보다 비싸지 않음"
+            : "영수증은 있지만 비교할 수 있는 것이 없음",
+    });
+  }
+
+  return {
+    station: {
+      ...station,
+      qualityCertified: row?.KPETRO_YN === "Y",
+      priceChangedOn,
+      daysSincePriceChange: priceChangedOn ? Math.round((Date.parse(today) - Date.parse(priceChangedOn)) / 86_400_000) : null,
+    },
+    areaAverage,
+    nearby: nearby && { count: nearby.count, rank: nearby.rank, position: nearby.position },
+    checks,
+    myReceipts: { matched: receipts.length, items: receipts.slice(-5) },
+    note:
+      "공개된 정보와 내 영수증만 맞춰 본 결과이며 주유소의 잘못을 판단한 것이 아닙니다. 가짜석유 판매 같은 불법행위로 적발된 주유소는 오피넷의 불법행위 공표 메뉴에서 따로 확인할 수 있습니다.",
+  };
+}
+
+const UREA_CACHE_MS = 60 * 60 * 1000; // 요소수 정보는 하루 네 번(7·13·18·24시) 바뀐다
+const UREA_MAX_KM = 30; // 위치로 찾을 때 이보다 먼 곳은 권하지 않는다
+
+// 요소수 재고가 있는 주유소. 시도 단위로 받아, 시군구로 좁히거나 출발 위치에서 가까운 순으로 고른다.
+export async function findUrea(sido: string, sigunName: string | null, origin: Origin | null, count = 5) {
+  if (!/^\d{2}$/.test(sido)) throw new RangeError("시도 코드는 2자리 숫자입니다.");
+  const place = origin === null ? null : resolveOrigin(origin);
+  if (origin !== null && !place) throw new RangeError("출발 위치가 올바르지 않습니다.");
+  const { body, fetchedAt } = await fetchOpinetTimed("ureaPrice", { area: sido }, UREA_CACHE_MS);
+  const town = sigunName ? squash(sigunName.split(" ").at(-1) ?? "") : "";
+  const all = rows(body).map((row) => {
+    const x = Number(row.GIS_X_COOR);
+    const y = Number(row.GIS_Y_COOR);
+    const price = Number(row.PRICE);
+    return {
+      id: String(row.UNI_ID),
+      name: String(row.OS_NM),
+      address: String(row.ADR ?? "").replace(/\s+/g, " "),
+      phone: String(row.TEL ?? ""),
+      inStock: row.STOCK_YN === "Y",
+      pricePerLiter: price > 0 ? price : null,
+      updatedAt: tradeTime(row.TRADE_DT, row.TRADE_TM),
+      distanceKm: place && isKatec(x, y) ? toKm(Math.hypot(x - place.x, y - place.y)) : null,
+    };
+  });
+  const inArea = town ? all.filter((station) => squash(station.address).includes(town)) : all;
+  const inStock = inArea.filter((station) => station.inStock);
+  const sorted = place
+    ? inStock
+        .filter((station) => station.distanceKm !== null && station.distanceKm <= UREA_MAX_KM)
+        .sort((a, b) => a.distanceKm! - b.distanceKm!)
+    : inStock.sort((a, b) => (a.pricePerLiter ?? Infinity) - (b.pricePerLiter ?? Infinity));
+  return {
+    area: sigunName ?? (await areaName(sido)),
+    from: place?.name ?? null,
+    sortedBy: place ? `출발 위치에서 직선 ${UREA_MAX_KM}km 안, 가까운 순` : "가격 낮은 순",
+    fetchedAtKst: kstTime(fetchedAt),
+    stationsReported: inArea.length,
+    inStockCount: inStock.length,
+    stations: sorted.slice(0, count),
+    note: "요소수 재고와 가격(원/L)은 주유소가 오피넷에 보고한 값이라 하루 네 번(7·13·18·24시) 바뀝니다. 가기 전에 전화로 재고를 확인하세요. 거리는 직선거리입니다.",
   };
 }

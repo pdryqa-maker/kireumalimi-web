@@ -11,6 +11,7 @@ import {
   type FillForecast,
   type FillRecord,
 } from "@/lib/fillForecast";
+import type { FuelReport } from "@/lib/fuelReport";
 import { loadFills } from "@/lib/savedFills";
 import type { CostResult } from "./AnswerCards";
 import { dayWithWeekday, koreanTime, won } from "./format";
@@ -179,6 +180,109 @@ export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost:
       </figure>
       <p className="mt-3 text-xs text-ink-soft">
         가격이 아니라 내 주유 간격만 기록으로 셈해요. 기록이 쌓일수록 정확해져요.
+      </p>
+    </div>
+  );
+}
+
+const signed = (value: number, unit: string, more: string, less: string) =>
+  `${won(Math.abs(value))}${unit} ${value >= 0 ? more : less}`;
+
+// 대화 기록에 남길 리포트 요약. 다음 자유 질문에서 AI가 이 값을 이어 쓴다.
+export function reportSummary(report: FuelReport) {
+  if (report.fills === 0) return `${report.monthLabel} 주유 리포트: 이 달 주유 기록 없음.`;
+  const parts = [
+    `${report.monthLabel} 주유 리포트(${report.fuel}, 연비 ${report.kmpl}km/L): 주유 ${report.fills}번, ${report.liters}L`,
+    report.totalWon !== null ? `쓴 돈 ${won(report.totalWon)}원` : "쓴 돈 모름",
+    `추정 주행 ${won(report.estimatedKm)}km`,
+  ];
+  if (report.wonPerKm !== null) parts.push(`km당 ${report.wonPerKm}원`);
+  if (report.vsArea) parts.push(`그날 ${report.vsArea.area} 평균 대비 ${signed(report.vsArea.savedWon, "원", "아낌", "더 씀")}`);
+  return `${parts.join(", ")}.`;
+}
+
+export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceipt: () => void }) {
+  const prev = report.previous;
+  return (
+    <div className={CARD}>
+      <h2 className="text-sm font-semibold text-ink-soft">
+        내 주유 리포트 · {report.monthLabel} · {report.fuel}
+      </h2>
+      {report.fills === 0 ? (
+        <>
+          <p className="mt-3 text-[15px] leading-relaxed">
+            {report.monthLabel}에는 아직 주유 기록이 없어요. 영수증 사진을 보내면 날짜, 양, 단가가 기록되고 이 리포트에 모여요.
+          </p>
+          {prev && (
+            <p className="mt-2 text-sm text-ink-soft tabular-nums">
+              {prev.monthLabel}: 주유 {prev.fills}번 · {prev.liters}L
+              {prev.totalWon !== null && ` · ${won(prev.totalWon)}원`}
+            </p>
+          )}
+          <button type="button" onClick={onReceipt} className={`${BUTTON} mt-4 bg-accent text-on-accent`}>
+            영수증 사진 고르기
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="mt-4 text-xs text-ink-soft">이 달 쓴 기름값</p>
+          <p className="mt-0.5 text-3xl font-bold tabular-nums">
+            {report.totalWon !== null ? `${won(report.totalWon)}원` : "금액 모름"}
+          </p>
+          {report.wonUnknownFills > 0 && (
+            <p className="mt-1 text-xs text-ink-soft">금액을 모르는 주유 {report.wonUnknownFills}번은 빼고 더했어요.</p>
+          )}
+          <dl className="mt-4 grid grid-cols-2 gap-3 tabular-nums">
+            {[
+              ["주유", `${report.fills}번`],
+              ["넣은 양", `${report.liters}L`],
+              ["추정 주행", `약 ${won(report.estimatedKm)}km`],
+              ["1km당 기름값", report.wonPerKm !== null ? `${report.wonPerKm}원` : "모름"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl px-4 py-3 shadow-inset-sm">
+                <dt className="text-xs text-ink-soft">{label}</dt>
+                <dd className="mt-0.5 text-lg font-semibold">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {report.vsArea && (
+            <p className="mt-4 text-[15px] leading-relaxed">
+              영수증 단가를 그날 {report.vsArea.area} 평균 판매가와 비교하면{" "}
+              <strong className="font-semibold">{signed(report.vsArea.savedWon, "원", "아꼈어요", "더 썼어요")}</strong>
+              <span className="text-sm text-ink-soft">(단가를 아는 {report.vsArea.comparedFills}번 기준)</span>
+            </p>
+          )}
+          {prev && (
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              {prev.monthLabel}보다 {signed(prev.litersDiff, "L", "더 넣었고", "덜 넣었고")}
+              {prev.wonDiff !== null ? `, 기름값은 ${signed(prev.wonDiff, "원", "더 썼어요", "덜 썼어요")}.` : ", 지난달 금액은 다 알지 못해 비교하지 않았어요."}
+            </p>
+          )}
+          <ol className="mt-4 divide-y divide-hairline text-sm">
+            {report.entries.map((entry) => {
+              const compared = report.vsArea?.fills.find((item) => item.date === entry.date);
+              return (
+                <li key={entry.date} className="flex items-baseline justify-between gap-3 py-2">
+                  <span className="min-w-0">
+                    <span className="tabular-nums">{dayWithWeekday(entry.date)}</span>
+                    {entry.stationName && <span className="ml-2 text-ink-soft">{entry.stationName}</span>}
+                  </span>
+                  <span className="shrink-0 text-right tabular-nums">
+                    {entry.liters}L{entry.paidWon !== null && ` · ${won(entry.paidWon)}원`}
+                    {compared && (
+                      <span className="block text-xs text-ink-soft">
+                        평균보다 리터당 {signed(compared.diffWon, "원", "비쌈", "쌈")}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </>
+      )}
+      <p className="mt-3 text-xs text-ink-soft">
+        주행거리는 넣은 양 × 연비({report.kmpl}km/L)로 추정한 값이에요. 기록은 이 브라우저에만 저장해요.
       </p>
     </div>
   );
