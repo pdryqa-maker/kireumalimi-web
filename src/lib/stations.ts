@@ -41,7 +41,7 @@ const FUEL_NAMES = Object.fromEntries(Object.entries(FUEL_CODES).map(([name, cod
 
 type Row = Record<string, string | number | undefined>;
 
-function rows(body: unknown): Row[] {
+export function rows(body: unknown): Row[] {
   const oil = (body as { RESULT?: { OIL?: Row[] } })?.RESULT?.OIL;
   return Array.isArray(oil) ? oil : [];
 }

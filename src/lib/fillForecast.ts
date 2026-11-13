@@ -27,6 +27,7 @@ function toDay(date: string) {
 
 const fromDay = (day: number) => new Date(day * DAY).toISOString().slice(0, 10);
 export const addDays = (date: string, days: number) => fromDay(toDay(date)! + days);
+export const daysBetween = (from: string, to: string) => toDay(to)! - toDay(from)!;
 export const weekday = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
 
 // 기록을 확인한다. 문제가 있으면 이용자에게 보여 줄 문장을 던진다.
