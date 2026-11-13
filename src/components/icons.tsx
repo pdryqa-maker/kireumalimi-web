@@ -82,3 +82,10 @@ export const LocateIcon = (props: IconProps) => (
     <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
   </Svg>
 );
+
+export const CameraIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z" />
+    <circle cx="12" cy="12.5" r="3.5" />
+  </Svg>
+);

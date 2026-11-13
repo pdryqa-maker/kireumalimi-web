@@ -21,6 +21,8 @@ export const PRICE_CAP = {
   name: "석유 최고가격",
   meaning: "정유사가 주유소와 판매소에 넘기는 공급가의 상한입니다. 주유소 판매가의 상한은 아닙니다.",
   checkedOn: "2026-11-13",
+  // 지금 상한 값이 처음 정해진 고시(리터당 150원 인하). 8차부터는 이 값으로 계속 동결됐다. 출처: 팀 과거 기록(fixed_question.json 7차).
+  setBy: { round: 7, startsOn: "2026-06-27", prices: { 휘발유: 1784, 경유: 1773, 실내등유: 1380 } as Record<string, number> },
   rounds: [
     {
       round: 11,

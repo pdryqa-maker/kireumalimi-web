@@ -1,5 +1,5 @@
 // 실질비용, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
-import type { AlertProposal } from "@/lib/chatbot";
+import type { AlertProposal, FillProposal } from "@/lib/chatbot";
 import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
 import type { findByTotalCost } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
@@ -303,6 +303,74 @@ export function AlertCheckCard({ check }: { check: AlertCheck }) {
         </>
       )}
       <p className="mt-3 text-xs text-ink-soft">{PUMP_NOTE}</p>
+    </div>
+  );
+}
+
+const FILL_STATUS_TEXT: Record<Exclude<AlertStatus, "proposed">, string> = {
+  saved: "주유 기록에 넣었어요",
+  unsaved: "이 브라우저에 저장하지 못했어요",
+  dismissed: "기록에 넣지 않았어요",
+};
+
+// 영수증 사진에서 읽은 주유 기록. 이용자가 확인하고 넣는다.
+export function FillProposalCard({
+  fill,
+  status,
+  onSave,
+  onDismiss,
+  busy,
+}: {
+  fill: FillProposal;
+  status: AlertStatus;
+  onSave: () => void;
+  onDismiss: () => void;
+  busy: boolean;
+}) {
+  const rounded = fill.litersOnReceipt !== fill.liters;
+  const rows: [string, string][] = [
+    ["주유한 날", longDate(fill.date)],
+    ["넣은 양", `${fill.litersOnReceipt}L${rounded ? ` (기록은 ${fill.liters}L)` : ""}`],
+    ...(fill.pricePerLiter ? ([["리터당", `${won(fill.pricePerLiter)}원`]] as [string, string][]) : []),
+    ...(fill.totalWon ? ([["결제 금액", `${won(fill.totalWon)}원`]] as [string, string][]) : []),
+    ...(fill.stationName ? ([["주유소", fill.stationName]] as [string, string][]) : []),
+  ];
+  return (
+    <div className={CARD}>
+      <CardHead title="영수증에서 읽은 주유 기록" />
+      <dl className="mt-3 divide-y divide-hairline">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-baseline justify-between gap-4 py-2.5">
+            <dt className="text-sm text-ink-soft">{label}</dt>
+            <dd className="text-right font-semibold tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {status === "proposed" ? (
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={busy}
+            className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-on-accent shadow-raised-sm disabled:opacity-50"
+          >
+            주유 기록에 넣기
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            disabled={busy}
+            className="rounded-full px-4 py-2 text-sm text-ink-soft shadow-raised-sm active:shadow-inset-sm disabled:opacity-50"
+          >
+            넣지 않기
+          </button>
+        </div>
+      ) : (
+        <p className={`mt-4 w-fit ${TAG}`}>{FILL_STATUS_TEXT[status]}</p>
+      )}
+      <p className="mt-3 text-xs text-ink-soft">
+        값이 다르면 넣지 말고 다시 찍어 주세요. 사진은 저장하지 않고, 기록은 이 브라우저에만 최근 5번까지 남겨요.
+      </p>
     </div>
   );
 }

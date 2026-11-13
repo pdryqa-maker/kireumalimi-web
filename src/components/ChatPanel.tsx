@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { AlertProposal } from "@/lib/chatbot";
+import type { AlertProposal, FillProposal } from "@/lib/chatbot";
 import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
-import { addDays, type FillForecast } from "@/lib/fillForecast";
+import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
 import { fuelName, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
@@ -17,6 +17,7 @@ import {
   CapCard,
   capMessage,
   CostCard,
+  FillProposalCard,
   fuelLabel,
   TaxCard,
   type AlertCheck,
@@ -30,7 +31,7 @@ import {
 import { FillLogCard, ForecastCard, forecastMessage } from "./FillCards";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
-import { CalendarIcon, PinIcon, ReceiptIcon, RouteIcon } from "./icons";
+import { CalendarIcon, CameraIcon, PinIcon, ReceiptIcon, RouteIcon } from "./icons";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const FUELS = PROFILE_FUELS;
@@ -40,6 +41,14 @@ const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시�
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
 const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
 const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
+const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
+const EXPLAIN_QUESTION = "요즘 기름값 왜 이래?";
+// 영수증 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
+const PHOTO_MAX_SIDE = 1600;
+const PHOTO_MAX_CHARS = 2_800_000;
+const PHOTO_INPUT_ID = "receipt-photo";
+// 사진 고르기 창을 연다. 추천 질문 칩에서도 부르므로 ref 대신 id로 찾는다.
+const pickPhoto = () => document.getElementById(PHOTO_INPUT_ID)?.click();
 // 서버가 받는 대화 한도(20턴, 한 턴 500자)에 맞춘다.
 const MAX_HISTORY = 19;
 const MAX_TURN_LENGTH = 500;
@@ -78,12 +87,43 @@ type Reply =
   | { from: "bot"; summary: string; tax: TaxImpact; taxCost: CostResult | null }
   | { from: "bot"; summary: string; alert: AlertProposal; status: AlertStatus; id: number }
   | { from: "bot"; summary: string; alertCheck: AlertCheck }
+  | { from: "bot"; summary: string; fill: FillProposal; status: AlertStatus; id: number }
   | { from: "bot"; summary: string; cap: CapNotice }
   | { from: "bot"; summary: string; fillForm: true }
   | { from: "bot"; summary: string; forecast: FillForecast; forecastCost: CostResult | null }
   | { from: "bot"; error: string; retry: () => void };
-type Message = { from: "user"; text: string } | Reply;
+type Message = { from: "user"; text: string; photo?: string } | Reply;
+type Photo = { preview: string; mediaType: "image/jpeg"; data: string };
 type Turn = { role: "user" | "assistant"; content: string };
+
+// 고른 사진을 줄여 JPEG로 바꾼다. 휴대폰 사진은 커서 그대로 보내면 서버 한도를 넘는다.
+async function shrinkPhoto(file: File): Promise<Photo | null> {
+  if (!file.type.startsWith("image/")) return null;
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(image.naturalWidth * scale);
+    canvas.height = Math.round(image.naturalHeight * scale);
+    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    for (const quality of [0.85, 0.7, 0.55]) {
+      const preview = canvas.toDataURL("image/jpeg", quality);
+      const data = preview.slice(preview.indexOf(",") + 1);
+      if (data.length <= PHOTO_MAX_CHARS) return { preview, mediaType: "image/jpeg", data };
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+const fillSummary = (fill: FillProposal, status: AlertStatus) =>
+  `영수증에서 읽은 주유 기록: ${fill.date} ${fill.litersOnReceipt}L(${{ proposed: "넣기 전", saved: "기록에 넣음", unsaved: "저장 못 함", dismissed: "넣지 않음" }[status]})`;
 
 async function getJson(url: string, init?: RequestInit) {
   try {
@@ -279,8 +319,8 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     setPending(null);
   }
 
-  function ask(question: string, kind: SkeletonKind, answer: () => Promise<Reply | Reply[] | null>) {
-    setMessages((current) => [...current, { from: "user", text: question }]);
+  function ask(question: string, kind: SkeletonKind, answer: () => Promise<Reply | Reply[] | null>, photo?: string) {
+    setMessages((current) => [...current, { from: "user", text: question, photo }]);
     run(kind, answer);
   }
 
@@ -428,14 +468,18 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     checkAlert(alert);
   }
 
-  function askFree(question: string) {
+  function askFree(question: string, photo?: Photo) {
     const history = toTurns([...messages, { from: "user", text: question }]);
     ask(question, "text", async () => {
       const { ok, body } = await getJson("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // 내 정보(이름, 위치, 차)는 서버가 다시 검사해 답을 맞추는 데만 쓴다.
-        body: JSON.stringify({ messages: history, profile: loggedIn ? profile : undefined }),
+        // 내 정보(이름, 위치, 차)는 서버가 다시 검사해 답을 맞추는 데만 쓴다. 사진은 이번 질문에만 붙인다.
+        body: JSON.stringify({
+          messages: history,
+          profile: loggedIn ? profile : undefined,
+          image: photo ? { mediaType: photo.mediaType, data: photo.data } : undefined,
+        }),
       });
       if (!ok || !body?.text) return body?.error ? { from: "bot", text: body.error } : null;
       const replies: Reply[] = [{ from: "bot", text: body.text, check: body.check ?? undefined }];
@@ -448,8 +492,58 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           summary: alertSummary(body.alert, "proposed"),
         });
       }
+      if (body.fill) {
+        replies.push({ from: "bot", fill: body.fill, status: "proposed", id: alertSeq++, summary: fillSummary(body.fill, "proposed") });
+      }
       return replies;
-    });
+    }, photo?.preview);
+  }
+
+  async function sendPhoto(file: File | undefined) {
+    if (!file || pending) return;
+    const photo = await shrinkPhoto(file);
+    const question = draft.trim() || RECEIPT_QUESTION;
+    setDraft("");
+    if (!photo) {
+      setMessages((current) => [
+        ...current,
+        { from: "user", text: question },
+        { from: "bot", text: "사진을 읽지 못했어요. 영수증을 JPG나 PNG 사진으로 다시 골라 주세요." },
+      ]);
+      return;
+    }
+    askFree(question, photo);
+  }
+
+  function setFillStatus(id: number, status: AlertStatus) {
+    setMessages((current) =>
+      current.map((message) =>
+        "fill" in message && message.id === id ? { ...message, status, summary: fillSummary(message.fill, status) } : message,
+      ),
+    );
+  }
+
+  // 영수증 기록을 주유 기록에 더한다. 같은 날 기록은 바꾸고, 최근 5번만 남긴다. 두 번 이상이면 다음 주유일을 바로 셈한다.
+  function saveFill(id: number, fill: FillProposal) {
+    const records = [...parseFills(fillStore.read()).filter((record) => record.date !== fill.date), { date: fill.date, liters: fill.liters }]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-MAX_RECORDS);
+    const stored = saveFills(records);
+    setFillStatus(id, stored ? "saved" : "unsaved");
+    if (!stored) return;
+    if (records.length < MIN_RECORDS) {
+      setMessages((current) => [
+        ...current,
+        { from: "bot", text: `주유 기록이 ${records.length}번이에요. 한 번 더 넣으면 다음 주유일을 알려 드려요.` },
+      ]);
+      return;
+    }
+    try {
+      submitForecast(forecastNextFill(records));
+    } catch (problem) {
+      const reason = problem instanceof Error ? problem.message : "";
+      setMessages((current) => [...current, { from: "bot", text: `기록은 넣었지만 다음 주유일은 셈하지 못했어요. ${reason}` }]);
+    }
   }
 
   function submit(event: React.FormEvent) {
@@ -468,9 +562,11 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     { label: FORECAST_QUESTION, onClick: askForecast, Icon: CalendarIcon },
   ];
   const chips = [
+    { label: EXPLAIN_QUESTION, onClick: () => askFree(EXPLAIN_QUESTION) },
     { label: CAP_QUESTION, onClick: askCap },
     { label: fixedQuestion, onClick: askFixed },
     { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
+    { label: "영수증 사진으로 주유 기록", onClick: pickPhoto },
   ];
   const suggestions = [...cards, ...chips];
   const today = mounted ? kstClock().today : "";
@@ -538,12 +634,13 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
         {messages.map((message, index) => {
           if (message.from === "user") {
             return (
-              <p
-                key={index}
-                className="ml-auto w-fit max-w-[85%] animate-rise rounded-2xl rounded-br-md bg-canvas px-4 py-2.5 text-[15px]"
-              >
-                {message.text}
-              </p>
+              <div key={index} className="ml-auto flex w-fit max-w-[85%] animate-rise flex-col items-end gap-2">
+                {message.photo && (
+                  // eslint-disable-next-line @next/next/no-img-element -- 이 브라우저에서 줄인 사진(data URL)이라 next/image가 필요 없다
+                  <img src={message.photo} alt="보낸 영수증 사진" className="max-h-48 w-auto rounded-2xl rounded-br-md object-contain shadow-raised-sm" />
+                )}
+                <p className="rounded-2xl rounded-br-md bg-canvas px-4 py-2.5 text-[15px]">{message.text}</p>
+              </div>
             );
           }
           if ("cap" in message) {
@@ -563,6 +660,18 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           }
           if ("alertCheck" in message) {
             return <AlertCheckCard key={index} check={message.alertCheck} />;
+          }
+          if ("fill" in message) {
+            return (
+              <FillProposalCard
+                key={index}
+                fill={message.fill}
+                status={message.status}
+                busy={busy}
+                onSave={() => saveFill(message.id, message.fill)}
+                onDismiss={() => setFillStatus(message.id, "dismissed")}
+              />
+            );
           }
           if ("alert" in message) {
             return (
@@ -779,14 +888,34 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           </div>
         )}
 
-        <form onSubmit={submit} className="flex items-center gap-2 rounded-full bg-ground p-1.5 pl-2 shadow-raised">
+        <form onSubmit={submit} className="flex items-center gap-1 rounded-full bg-ground p-1.5 shadow-raised">
+          <input
+            id={PHOTO_INPUT_ID}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              sendPhoto(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={pickPhoto}
+            disabled={busy}
+            aria-label="영수증 사진 보내기"
+            title="영수증 사진으로 주유 기록 남기기"
+            className="grid size-11 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-canvas disabled:opacity-50"
+          >
+            <CameraIcon className="size-5" />
+          </button>
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             maxLength={500}
             placeholder={loggedIn ? "예: 우리 집 근처 경유, 거리까지 따지면?" : "예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"}
             aria-label="질문 입력"
-            className="min-w-0 flex-1 rounded-full bg-transparent px-4 py-2.5 text-[15px] placeholder:text-ink-soft focus-visible:outline-offset-1"
+            className="min-w-0 flex-1 rounded-full bg-transparent px-2 py-2.5 text-[15px] placeholder:text-ink-soft focus-visible:outline-offset-1"
           />
           <button
             type="submit"

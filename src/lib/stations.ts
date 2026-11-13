@@ -99,6 +99,158 @@ export async function areaName(code: string) {
   return `${sido.name} ${sigun.name}`;
 }
 
+// 사람들이 쓰는 시도 이름 → 오피넷 시도 이름. 오피넷은 광주와 전남을 '전남광주' 하나로 준다.
+const SIDO_ALIASES: Record<string, string[]> = {
+  서울: ["서울특별시", "서울시"],
+  부산: ["부산광역시", "부산시"],
+  대구: ["대구광역시", "대구시"],
+  인천: ["인천광역시", "인천시"],
+  대전: ["대전광역시", "대전시"],
+  울산: ["울산광역시", "울산시"],
+  세종: ["세종특별자치시", "세종시"],
+  경기: ["경기도"],
+  강원: ["강원특별자치도", "강원도"],
+  충북: ["충청북도"],
+  충남: ["충청남도"],
+  전북: ["전북특별자치도", "전라북도"],
+  경북: ["경상북도"],
+  경남: ["경상남도"],
+  제주: ["제주특별자치도", "제주도"],
+  // 2026년 7월 1일 전남광주통합특별시 출범. 예전 이름(광주광역시, 전라남도)으로 물어도 찾는다.
+  전남광주: ["전남광주통합특별시", "전남광주특별시", "광주광역시", "전라남도", "전남", "광주"],
+};
+
+const squash = (text: string) => text.replace(/\s+/g, "");
+// '해운대구' ↔ '해운대'. '중구'처럼 두 글자 이름은 줄이지 않는다.
+const stem = (name: string) => (name.length > 2 ? name.replace(/[시군구]$/, "") : name);
+
+// 지역 이름(예: '부산 해운대구', '서울', '전남 순천시') 또는 지역코드 → { code, name }.
+// 시도 이름이 앞에 있어야 한다. '중구'처럼 여러 시도에 있는 이름을 헷갈리지 않기 위해서다.
+export async function resolveArea(text: string) {
+  const raw = text.trim();
+  if (isAreaCode(raw)) return { code: raw, name: await areaName(raw) };
+  const query = squash(raw).replace(/(전체|전역)$/, "");
+  const sidos = await areaList();
+  // 긴 이름부터 맞춰 '광주광역시'를 '광주'보다 먼저 잡는다.
+  const names = sidos
+    .flatMap((sido) => [sido.name, ...(SIDO_ALIASES[sido.name] ?? [])].map((name) => ({ sido, name })))
+    .sort((a, b) => b.name.length - a.name.length);
+  const hit = names.find(({ name }) => query.startsWith(name));
+  if (!hit) {
+    throw new RangeError(
+      `'${raw}' 지역을 찾지 못했습니다. 시도 이름을 앞에 넣어 다시 조회하세요(예: 부산 해운대구). 시도: ${sidos.map((sido) => sido.name).join(", ")}`,
+    );
+  }
+  const rest = query.slice(hit.name.length);
+  if (!rest) return { code: hit.sido.code, name: await areaName(hit.sido.code) };
+  const siguns = await areaList(hit.sido.code);
+  const sigunNames = siguns.map((area) => ({ area, name: squash(area.name) }));
+  // 이름이 '광주 북구'처럼 앞에 다른 말이 붙어 와도 끝이 하나만 맞으면 그 시군구로 본다.
+  const endings = sigunNames.filter(({ name }) => name.endsWith(rest));
+  const sigun =
+    sigunNames.find(({ name }) => name === rest)?.area ??
+    sigunNames.find(({ name }) => stem(name) === stem(rest))?.area ??
+    [...sigunNames].sort((a, b) => b.name.length - a.name.length).find(({ name }) => rest.startsWith(name))?.area ??
+    (rest.length >= 2 && endings.length === 1 ? endings[0].area : undefined);
+  if (!sigun) {
+    throw new RangeError(
+      `${hit.sido.name}에서 '${rest}'을 찾지 못했습니다. ${hit.sido.name}의 시군구: ${siguns.map((area) => area.name).join(", ")}`,
+    );
+  }
+  return { code: sigun.code, name: await areaName(sigun.code) };
+}
+
+// 상호로 주유소 찾기. 오피넷은 이름 일부로도 찾아 준다. 가격은 없어서 get_station_detail로 따로 본다.
+export async function searchStations(name: string, area: string | null, count = 5) {
+  // '서하남주유소'처럼 붙여 써도 찾도록 끝의 '주유소'를 뗀다.
+  const osnm = name.trim().replace(/\s*주유소$/, "") || name.trim();
+  if (osnm.length < 2) throw new RangeError("주유소 이름은 두 글자 이상 넣어 주세요.");
+  const query: Record<string, string> = { osnm };
+  if (area) query.area = area.slice(0, 2);
+  const { body, fetchedAt } = await fetchOpinetTimed("searchByName", query);
+  const found = rows(body).map((row) => ({
+    id: String(row.UNI_ID),
+    name: String(row.OS_NM),
+    brand: brandName(row.POLL_DIV_CO ?? row.POLL_DIV_CD),
+    address: String(row.NEW_ADR || row.VAN_ADR || "").replace(/\s+/g, " "),
+  }));
+  return {
+    query: osnm,
+    area: area ? await areaName(area.slice(0, 2)) : "전국",
+    fetchedAtKst: kstTime(fetchedAt),
+    total: found.length,
+    stations: found.slice(0, count),
+    note: found.length > count ? "더 있습니다. 지역을 함께 말하면 좁혀 찾을 수 있습니다." : null,
+  };
+}
+
+const isAlttle = (brand: string) => brand.includes("알뜰");
+
+// 이 주유소가 동네에서 싼 편인지: 시군구 평균과의 차이, 반경 5km 안에서 몇 번째로 싼지.
+// 단골 점검과 '알뜰이 정말 싼지' 확인에 쓴다. 반경은 이 주유소에서 잰 직선 5km다.
+export async function stationStanding(id: string, fuel: string) {
+  const prodcd = FUEL_CODES[fuel];
+  if (!prodcd) throw new RangeError("지원하지 않는 유종입니다.");
+  const [row] = rows(await fetchOpinet("detailById", { id }));
+  if (!row) return { error: "주유소를 찾지 못했습니다." };
+  const priceRow = ((row.OIL_PRICE as unknown as Row[] | undefined) ?? []).find((item) => String(item.PRODCD) === prodcd);
+  const price = Number(priceRow?.PRICE);
+  if (!priceRow || !(price > 0)) return { error: `${String(row.OS_NM)}에는 ${fuel} 가격이 없습니다.` };
+  const brand = brandName(row.POLL_DIV_CO);
+  const sigun = String(row.SIGUNCD ?? "");
+  const x = Number(row.GIS_X_COOR);
+  const y = Number(row.GIS_Y_COOR);
+
+  let areaAverage: { area: string; averageWon: number; diffWon: number } | null = null;
+  if (/^\d{4}$/.test(sigun)) {
+    const { body } = await fetchOpinetTimed("avgSigunPrice", { sido: sigun.slice(0, 2), sigun, prodcd }, 60 * 60 * 1000);
+    const average = Number(rows(body).find((item) => String(item.PRODCD) === prodcd)?.PRICE);
+    if (average > 0) {
+      areaAverage = { area: await areaName(sigun), averageWon: Math.round(average * 10) / 10, diffWon: Math.round((price - average) * 10) / 10 };
+    }
+  }
+
+  let nearby = null;
+  if (isKatec(x, y)) {
+    const { body, fetchedAt } = await fetchOpinetTimed("aroundAll", { x: String(x), y: String(y), radius: String(RADIUS_M), prodcd, sort: "1" });
+    const list = aroundRows(body);
+    const others = list.filter((item) => item.id !== id);
+    const count = others.length + 1;
+    const rank = others.filter((item) => item.price < price).length + 1;
+    const quarter = Math.max(1, Math.floor(count / 4));
+    const cheapest = [...others].sort((a, b) => a.price - b.price || a.distanceM - b.distanceM)[0] ?? null;
+    nearby = {
+      radiusKm: RADIUS_M / 1000,
+      fetchedAtKst: kstTime(fetchedAt),
+      count,
+      rank,
+      position: rank <= quarter ? "싼 쪽 4분의 1 안" : rank > count - quarter ? "비싼 쪽 4분의 1 안" : "중간",
+      isCheapest: rank === 1,
+      // 이 주유소보다 싼 곳 가운데 가장 싼 곳(이 주유소에서 잰 직선거리)
+      cheaperOption:
+        cheapest && cheapest.price < price
+          ? { id: cheapest.id, name: cheapest.name, price: cheapest.price, distanceKm: toKm(cheapest.distanceM), cheaperByWon: price - cheapest.price }
+          : null,
+    };
+  }
+
+  return {
+    station: {
+      id: String(row.UNI_ID),
+      name: String(row.OS_NM),
+      brand,
+      alttle: isAlttle(brand),
+      goodStation: row.GOOD_YN === "Y",
+      fuel,
+      price,
+      updatedAt: tradeTime(priceRow.TRADE_DT, priceRow.TRADE_TM),
+    },
+    areaAverage,
+    nearby,
+    note: "가격은 오피넷에 보고된 값이라 현장과 다를 수 있습니다. 순위는 이 주유소에서 직선 5km 안의 주유소끼리 비교한 것입니다.",
+  };
+}
+
 export async function findCheapest(fuel: string, area: string, count = 5) {
   const prodcd = FUEL_CODES[fuel];
   if (!prodcd || !isAreaCode(area)) {

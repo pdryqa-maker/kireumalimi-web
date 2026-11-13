@@ -3,7 +3,7 @@
 // 내 알림 조건 화면. 일반 이용자가 조건을 미리 걸어 두면, 조건에 맞을 때만 알려 준다.
 // 시제품은 알림을 보내지 않고, 지금 조건으로 받게 될 알림과 보내는 때를 미리 보여 준다.
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buildNotices, kstClock, RULES, scheduleNotices, type Planned, type PriceCheck } from "@/lib/conditions";
 import { addDays } from "@/lib/fillForecast";
 import { FUEL_TAX_CUT, PRICE_CAP } from "@/lib/policy";
@@ -22,6 +22,18 @@ const MIN_WON = 500;
 const MAX_WON = 3000;
 
 const PRICE_FUELS = ["휘발유", "경유", "자동차부탄"];
+
+type Area = { code: string; name: string };
+// 내 지역이 없을 때 처음 보여 줄 지역(시연 지역)
+const DEFAULT_AREA: Area = { code: "1831", name: "울산 울주군" };
+
+// 오피넷 지역 목록. sido를 비우면 시도, 시도 코드를 주면 그 시도의 시군구.
+async function loadAreas(sido = ""): Promise<Area[]> {
+  const response = await fetch(`/api/areas${sido ? `?sido=${sido}` : ""}`);
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(body?.areas)) throw new Error();
+  return body.areas;
+}
 
 function Chevron() {
   return (
@@ -112,22 +124,60 @@ async function fetchPrices(alerts: SavedAlert[]) {
   return checks;
 }
 
-export default function AlertsManager({ areas }: { areas: Record<string, string> }) {
+export default function AlertsManager() {
   const watch = useStored(watchStore, parseWatch);
   const alerts = useStored(alertStore, parseAlerts);
   const fills = useStored(fillStore, parseFills);
   const profile = useProfile();
   const mounted = useMounted();
   const car = { fuel: profile.fuel, liters: profile.liters };
-  // 가격 조건 지역: 울산 구·군에 내 지역을 더한다.
-  const areaOptions = profile.area ? { [profile.area.code]: profile.area.name, ...areas } : areas;
   const [checks, setChecks] = useState<Record<string, PriceCheck>>({});
   const [checking, setChecking] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
   const [fuelChoice, setPriceFuel] = useState<string | null>(null);
-  const [areaChoice, setArea] = useState<string | null>(null);
   const priceFuel = fuelChoice ?? (PRICE_FUELS.includes(profile.fuel) ? profile.fuel : PRICE_FUELS[0]);
-  const area = areaChoice ?? (mounted && profile.area ? profile.area.code : "1831");
+  // 가격 조건 지역: 전국 시도·시군구에서 고른다. 처음에는 내 지역(없으면 울산 울주군)을 골라 둔다.
+  const [picked, setPicked] = useState<Area | null>(null);
+  const area = picked ?? (mounted && profile.area ? profile.area : DEFAULT_AREA);
+  const sidoCode = area.code.slice(0, 2);
+  const [sidos, setSidos] = useState<Area[] | null>(null);
+  const [sigunLists, setSigunLists] = useState<Record<string, Area[]>>({});
+  const [areaError, setAreaError] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    loadAreas()
+      .then((list) => alive && setSidos(list))
+      .catch(() => alive && setAreaError(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (sigunLists[sidoCode]) return;
+    let alive = true;
+    loadAreas(sidoCode)
+      .then((list) => alive && setSigunLists((current) => ({ ...current, [sidoCode]: list })))
+      .catch(() => alive && setAreaError(true));
+    return () => {
+      alive = false;
+    };
+  }, [sidoCode, sigunLists]);
+  const sidoName = sidos?.find((sido) => sido.code === sidoCode)?.name ?? area.name.split(" ")[0];
+  const siguns = sigunLists[sidoCode] ?? [];
+  const sidoOptions: [string, string][] = sidos ? sidos.map((sido) => [sido.code, sido.name]) : [[sidoCode, sidoName]];
+  const sigunOptions: [string, string][] = [
+    ["", `${sidoName} 전체`],
+    ...(siguns.length > 0
+      ? siguns.map((sigun): [string, string] => [sigun.code, sigun.name])
+      : area.code.length === 4
+        ? [[area.code, area.name.replace(`${sidoName} `, "")] as [string, string]]
+        : []),
+  ];
+  const chooseSido = (code: string) => setPicked({ code, name: sidos?.find((sido) => sido.code === code)?.name ?? code });
+  const chooseSigun = (code: string) => {
+    const sigun = siguns.find((item) => item.code === code);
+    setPicked(sigun ? { code, name: `${sidoName} ${sigun.name}` } : { code: sidoCode, name: sidoName });
+  };
   const [belowWon, setBelowWon] = useState("");
   const [priceError, setPriceError] = useState("");
 
@@ -142,7 +192,7 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
       setPriceError(`가격은 ${won(MIN_WON)}~${won(MAX_WON)}원 사이 정수로 넣어 주세요.`);
       return;
     }
-    if (!addAlert({ fuel: priceFuel, area, areaName: areaOptions[area], belowWon: value })) {
+    if (!addAlert({ fuel: priceFuel, area: area.code, areaName: area.name, belowWon: value })) {
       setPriceError("이 브라우저에 저장하지 못했어요. 개인 정보 보호 모드인지 확인해 주세요.");
       return;
     }
@@ -191,7 +241,8 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
         <h2 className="mt-8 text-base font-semibold">가격 조건</h2>
         <form onSubmit={addPrice} className="mt-2.5 flex flex-wrap items-center gap-2.5" aria-label="가격 조건 추가">
           <Select label="가격 조건 유종" value={priceFuel} options={PRICE_FUELS.map((fuel) => [fuel, fuelName(fuel)])} onChange={setPriceFuel} />
-          <Select label="가격 조건 지역" value={area} options={Object.entries(areaOptions)} onChange={setArea} />
+          <Select label="가격 조건 시도" value={sidoCode} options={sidoOptions} onChange={chooseSido} />
+          <Select label="가격 조건 시군구" value={area.code.length === 4 ? area.code : ""} options={sigunOptions} onChange={chooseSigun} />
           <span className="flex items-center gap-1.5">
             <input
               type="number"
@@ -220,7 +271,10 @@ export default function AlertsManager({ areas }: { areas: Record<string, string>
           </p>
         )}
         <p className="mt-2 text-xs text-ink-soft">
-          {full ? `가격 조건은 ${MAX_ALERTS}개까지예요. 하나를 지우면 더 넣을 수 있어요.` : `오피넷 가격 기준이에요. 최대 ${MAX_ALERTS}개.`}
+          {full
+            ? `가격 조건은 ${MAX_ALERTS}개까지예요. 하나를 지우면 더 넣을 수 있어요.`
+            : `전국 어느 지역이나 걸 수 있어요. 오피넷 가격 기준이에요. 최대 ${MAX_ALERTS}개.`}
+          {areaError && " 지역 목록을 불러오지 못해 지금 지역만 고를 수 있어요."}
         </p>
         {mounted && alerts.length > 0 && (
           <ul className="mt-3 space-y-2.5">
