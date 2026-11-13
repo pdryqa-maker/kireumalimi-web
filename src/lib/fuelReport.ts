@@ -28,22 +28,28 @@ const monthLabel = (month: string) => `${Number(month.slice(0, 4))}년 ${Number(
 
 // 결제 금액이 없으면 단가 × 양으로 셈한다. 둘 다 없으면 모른다.
 const paidWon = (entry: LedgerEntry) =>
-  entry.totalWon ?? (entry.pricePerLiter ? Math.round(entry.pricePerLiter * entry.liters) : null);
+  entry.totalWon ?? (entry.pricePerLiter && entry.liters !== null ? Math.round(entry.pricePerLiter * entry.liters) : null);
 
 function totals(entries: LedgerEntry[], kmpl: number) {
-  const liters = round2(entries.reduce((sum, entry) => sum + entry.liters, 0));
+  const known = entries.filter((entry) => entry.liters !== null);
+  const liters = round2(known.reduce((sum, entry) => sum + entry.liters!, 0));
   const paid = entries.filter((entry) => paidWon(entry) !== null);
   const totalWon = paid.reduce((sum, entry) => sum + paidWon(entry)!, 0);
-  const paidLiters = paid.reduce((sum, entry) => sum + entry.liters, 0);
+  // 단가와 km당 연료비는 금액과 리터를 함께 아는 주유로만 셈한다.
+  const both = paid.filter((entry) => entry.liters !== null);
+  const bothWon = both.reduce((sum, entry) => sum + paidWon(entry)!, 0);
+  const bothLiters = both.reduce((sum, entry) => sum + entry.liters!, 0);
   return {
     fills: entries.length,
+    // 리터를 아는 주유만 더한 값. 금액만 적은 주유(litersUnknownFills)는 빠진다.
     liters,
+    litersUnknownFills: entries.length - known.length,
     // 금액을 아는 주유만 더한 값. wonUnknownFills가 0보다 크면 실제로 쓴 돈은 이보다 많다.
     totalWon: paid.length > 0 ? totalWon : null,
     wonUnknownFills: entries.length - paid.length,
-    avgPricePerLiter: paidLiters > 0 ? round1(totalWon / paidLiters) : null,
+    avgPricePerLiter: bothLiters > 0 ? round1(bothWon / bothLiters) : null,
     estimatedKm: Math.round(liters * kmpl),
-    wonPerKm: paidLiters > 0 ? round1(totalWon / (paidLiters * kmpl)) : null,
+    wonPerKm: bothLiters > 0 ? round1(bothWon / (bothLiters * kmpl)) : null,
   };
 }
 
@@ -115,7 +121,7 @@ export async function fuelReport(ledger: LedgerEntry[], { fuel, kmpl, area, mont
   const sum = totals(entries, kmpl);
   const prev = before.length > 0 ? totals(before, kmpl) : null;
 
-  const priced = entries.filter((entry) => entry.pricePerLiter !== null);
+  const priced = entries.filter((entry) => entry.pricePerLiter !== null && entry.liters !== null);
   const averages = priced.length > 0 ? await dailyAverages(sido, prodcd, priced.map((entry) => entry.date), today) : new Map<string, number>();
   const compared = priced
     .map((entry) => {
@@ -132,7 +138,7 @@ export async function fuelReport(ledger: LedgerEntry[], { fuel, kmpl, area, mont
         // +면 그날 평균보다 비싸게, -면 싸게 넣음
         diffWon: round1(entry.pricePerLiter! - average),
         // +면 평균 가격으로 넣었을 때보다 아낀 돈, -면 더 쓴 돈
-        savedWon: Math.round((average - entry.pricePerLiter!) * entry.liters),
+        savedWon: Math.round((average - entry.pricePerLiter!) * entry.liters!),
       };
     })
     .filter((item) => item !== null);
@@ -166,10 +172,12 @@ export async function fuelReport(ledger: LedgerEntry[], { fuel, kmpl, area, mont
           monthLabel: monthLabel(previousMonth(target)),
           fills: prev.fills,
           liters: prev.liters,
+          litersUnknownFills: prev.litersUnknownFills,
           totalWon: prev.totalWon,
           estimatedKm: prev.estimatedKm,
           // 이번 달 - 지난달. 금액은 두 달 모두 금액을 다 알 때만 비교한다.
-          litersDiff: round2(sum.liters - prev.liters),
+          // 리터는 두 달 모두 리터를 다 알 때만 비교한다.
+          litersDiff: sum.litersUnknownFills === 0 && prev.litersUnknownFills === 0 ? round2(sum.liters - prev.liters) : null,
           wonDiff:
             sum.totalWon !== null && prev.totalWon !== null && sum.wonUnknownFills === 0 && prev.wonUnknownFills === 0
               ? sum.totalWon - prev.totalWon
@@ -178,7 +186,7 @@ export async function fuelReport(ledger: LedgerEntry[], { fuel, kmpl, area, mont
       : null,
     entries: entries.map((entry) => ({ ...entry, paidWon: paidWon(entry) })),
     note:
-      "주행거리는 넣은 양 × 연비로 추정한 값입니다. 평균 비교는 그날 시도 평균 판매가(오피넷)와 영수증 단가를 비교한 것이고, 그날 평균이 아직 나오지 않았으면 가장 가까운 지난 날(3일 안) 평균을 씁니다(averageDate). 단가가 없는 주유는 빼고 셉니다.",
+      "주행거리는 넣은 양 × 연비로 추정한 값이고, 금액만 적은 주유(litersUnknownFills)는 넣은 양과 주행거리에서 빠집니다. 평균 비교는 그날 시도 평균 판매가(오피넷)와 영수증 단가를 비교한 것이고, 그날 평균이 아직 나오지 않았으면 가장 가까운 지난 날(3일 안) 평균을 씁니다(averageDate). 단가가 없는 주유는 빼고 셉니다.",
   };
 }
 

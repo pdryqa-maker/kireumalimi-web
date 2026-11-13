@@ -46,16 +46,21 @@ export const CAP_FUELS = ["휘발유", "경유", "실내등유"];
 
 export const MAX_LITERS = 300;
 
+const checkLiters = (liters: number | null) => {
+  if (liters !== null && (!Number.isInteger(liters) || liters < 1 || liters > MAX_LITERS)) {
+    throw new RangeError(`주유량은 1~${MAX_LITERS}리터 사이 정수여야 합니다.`);
+  }
+};
+
 // 최근 고시의 최고가격과 직전 차수 대비 변화. 공급가 상한이라 판매가가 같은 폭으로 바로 움직인다는 보장은 없다.
-export function priceCapNotice(fuel: string, liters: number) {
+// 주유량(liters)을 모르면(금액을 리터로 바꿀 평균가를 못 받았을 때) 리터당 값만 돌려준다.
+export function priceCapNotice(fuel: string, liters: number | null) {
   const current = PRICE_CAP.rounds.at(-1)!;
   const previous = PRICE_CAP.rounds.at(-2) ?? null;
   if (!(fuel in current.prices)) {
     return { error: `최고가격 안내 대상 유종이 아닙니다(${fuel}). 휘발유, 경유, 실내등유만 안내합니다.` };
   }
-  if (!Number.isInteger(liters) || liters < 1 || liters > MAX_LITERS) {
-    throw new RangeError(`주유량은 1~${MAX_LITERS}리터 사이 정수여야 합니다.`);
-  }
+  checkLiters(liters);
   const fuels = CAP_FUELS.map((name) => {
     const capWon = current.prices[name];
     const previousCapWon = previous?.prices[name] ?? null;
@@ -72,7 +77,7 @@ export function priceCapNotice(fuel: string, liters: number) {
     capWon: chosen.capWon,
     changeWon: chosen.changeWon,
     // 상한 변화가 주유량만큼 판매가에 다 옮겨 갈 때의 차이. 그보다 작거나 늦을 수 있어 '최대'다.
-    maxDiffWon: chosen.changeWon === null ? null : Math.abs(chosen.changeWon) * liters,
+    maxDiffWon: chosen.changeWon === null || liters === null ? null : Math.abs(chosen.changeWon) * liters,
     fuels,
     meaning: PRICE_CAP.meaning,
     source: current.source,
@@ -82,20 +87,18 @@ export function priceCapNotice(fuel: string, liters: number) {
 }
 
 // 유류세 인하가 끝날 때 내 주유량에서 최대 얼마가 더 드는지. 판매가가 한 번에 오르지 않을 수 있어 '최대'다.
-export function taxCutImpact(fuel: string, liters: number) {
+export function taxCutImpact(fuel: string, liters: number | null) {
   const cut = FUEL_TAX_CUT.fuels[fuel];
   if (!cut) {
     return { error: `유류세 인하 계산 대상 유종이 아닙니다(${fuel}). 휘발유, 경유, 자동차부탄만 계산합니다.` };
   }
-  if (!Number.isInteger(liters) || liters < 1 || liters > MAX_LITERS) {
-    throw new RangeError(`주유량은 1~${MAX_LITERS}리터 사이 정수여야 합니다.`);
-  }
+  checkLiters(liters);
   return {
     fuel,
     liters,
     ratePct: cut.ratePct,
     wonPerLiter: cut.wonPerLiter,
-    maxExtraWon: cut.wonPerLiter * liters,
+    maxExtraWon: liters === null ? null : cut.wonPerLiter * liters,
     endsOn: FUEL_TAX_CUT.endsOn,
     decidedOn: FUEL_TAX_CUT.decidedOn,
     source: FUEL_TAX_CUT.source,

@@ -1,4 +1,5 @@
 // 챗봇이 쓸 주유소 조회 기능. 화면의 결과 카드와 나중에 붙일 AI 도구가 함께 쓴다.
+import { litersFill, type Fill } from "@/lib/fillAmount";
 import { fetchOpinet, fetchOpinetTimed } from "@/lib/opinet";
 import { PLACES } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
@@ -372,7 +373,9 @@ export async function findNearby(fuel: string, origin: Origin, count = 5) {
 
 // 실질비용: 기름값(가격 × 주유량)에 출발 위치에서 그 주유소까지 오가는 연료비를 더한 값.
 // 거리는 오피넷이 주는 직선거리라 실제 도로보다 짧다. 그래서 오가는 연료비는 적게 잡힌 값이다.
-export async function findByTotalCost(fuel: string, origin: Origin, liters = DEFAULT_LITERS, kmpl = DEFAULT_KMPL) {
+// 금액(5만원어치)은 미리 리터로 바꿔(fill) 받는다. 같은 양을 넣을 때 어디가 덜 드는지 비교한다.
+export async function findByTotalCost(fuel: string, origin: Origin, fill: Fill = litersFill(DEFAULT_LITERS), kmpl = DEFAULT_KMPL) {
+  const { liters } = fill;
   const prodcd = FUEL_CODES[fuel];
   const place = resolveOrigin(origin);
   if (!prodcd || !place) {
@@ -402,6 +405,7 @@ export async function findByTotalCost(fuel: string, origin: Origin, liters = DEF
     fuel,
     place: place.name,
     liters,
+    fill,
     kmpl,
     radiusKm: RADIUS_M / 1000,
     fetchedAt,

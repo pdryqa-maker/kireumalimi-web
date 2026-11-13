@@ -2,13 +2,15 @@
 // 보내는 규칙은 06 기획안의 알림 엔진 규칙을 따른다.
 // 밤 9시~아침 8시에는 보내지 않고 아침 8시에 보낸다. 같은 알림은 한 번만 보낸다. 하루에 2건까지만 보낸다.
 import { dayWithWeekday, koreanTime, monthDay, won } from "@/components/format";
+import type { Fill } from "./fillAmount";
 import { addDays, forecastNextFill, MIN_RECORDS, todayKst, type FillRecord } from "./fillForecast";
 import { FUEL_TAX_CUT, PRICE_CAP, priceCapNotice, taxCutImpact } from "./policy";
 import type { SavedAlert } from "./savedAlerts";
 import { fuelName } from "./profile";
 import type { Watch } from "./watchSettings";
 
-export type Car = { fuel: string; liters: number };
+// fill은 한 번에 넣는 양을 리터로 바꾼 값. 금액을 리터로 바꿀 평균가를 아직 못 받았으면 null이고, 그때는 리터당 금액만 말한다.
+export type Car = { fuel: string; fill: Fill | null };
 
 export const RULES = { quietFrom: 21, quietTo: 8, dailyMax: 2, taxLeadDays: 7 };
 
@@ -66,15 +68,16 @@ function capNotice(car: Car, today: string): Notice {
       message: null,
     };
   }
-  const cap = priceCapNotice(car.fuel, car.liters);
+  const cap = priceCapNotice(car.fuel, car.fill?.liters ?? null);
   if (typeof cap.error === "string") return { ...base, state: cap.error, readyOn: null, message: null };
   const { capWon, changeWon, maxDiffWon, previousRound } = cap as Exclude<typeof cap, { error: string }>;
   const change =
-    changeWon === null || maxDiffWon === null
+    changeWon === null
       ? ""
       : changeWon === 0
         ? ` ${previousRound}차와 같아요.`
-        : ` ${previousRound}차보다 ${won(Math.abs(changeWon))}원 ${changeWon < 0 ? "내려" : "올라"}, ${car.liters}L면 최대 ${won(maxDiffWon)}원 차이예요.`;
+        : ` ${previousRound}차보다 ${won(Math.abs(changeWon))}원 ${changeWon < 0 ? "내려" : "올라"}` +
+          (car.fill && maxDiffWon !== null ? `, ${car.fill.label}면 최대 ${won(maxDiffWon)}원 차이예요.` : "요.");
   return {
     ...base,
     state: `${latest.round}차 고시가 ${monthDay(latest.announcedOn)}에 나왔어요.`,
@@ -89,18 +92,22 @@ function taxNotice(car: Car, today: string): Notice {
   const { endsOn } = FUEL_TAX_CUT;
   const leadOn = addDays(endsOn, -RULES.taxLeadDays);
   const base = { id: "tax", kind: "tax" as const, title: `유류세 인하 종료 ${RULES.taxLeadDays}일 전` };
-  const impact = taxCutImpact(car.fuel, car.liters);
+  const impact = taxCutImpact(car.fuel, car.fill?.liters ?? null);
   if (typeof impact.error === "string") return { ...base, state: impact.error, readyOn: null, message: null };
   if (today > endsOn) {
     return { ...base, state: `인하가 ${monthDay(endsOn)}에 끝났어요. 정부가 다시 정하면 날짜를 고쳐요.`, readyOn: null, message: null };
   }
-  const { maxExtraWon } = impact as Exclude<typeof impact, { error: string }>;
+  const { maxExtraWon, wonPerLiter } = impact as Exclude<typeof impact, { error: string }>;
+  const extra =
+    car.fill && maxExtraWon !== null
+      ? `${fuelName(car.fuel)} ${car.fill.label}를 넣는 데 최대 ${won(maxExtraWon)}원 더 들 수 있어요.`
+      : `${fuelName(car.fuel)}는 리터당 최대 ${won(wonPerLiter)}원 더 들 수 있어요.`;
   return {
     ...base,
     state: `종료 예정 ${dayWithWeekday(endsOn)}. ${dayWithWeekday(leadOn)}에 알려요.`,
     readyOn: today > leadOn ? today : leadOn,
     message:
-      `${monthDay(endsOn)} 유류세 인하가 끝날 예정이에요. ${fuelName(car.fuel)} ${car.liters}L면 최대 ${won(maxExtraWon)}원 더 들 수 있어요. ` +
+      `${monthDay(endsOn)} 유류세 인하가 끝날 예정이에요. ${extra} ` +
       "정부가 연장하면 다시 알려 드려요.",
   };
 }

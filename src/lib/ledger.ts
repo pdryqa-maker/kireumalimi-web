@@ -4,7 +4,7 @@ import { MAX_LITERS } from "./policy";
 
 export type LedgerEntry = {
   date: string; // YYYY-MM-DD
-  liters: number; // 영수증에 적힌 양(소수 둘째 자리까지)
+  liters: number | null; // 영수증에 적힌 양(소수 둘째 자리까지). 금액만 적은 주유 기록이면 모른다
   pricePerLiter: number | null; // 리터당 단가(원)
   totalWon: number | null; // 결제 금액(원)
   stationName: string | null;
@@ -28,14 +28,17 @@ const cleanName = (value: unknown) =>
 export function cleanEntry(value: unknown): LedgerEntry | null {
   const item = (value ?? {}) as Partial<LedgerEntry>;
   const date = String(item.date ?? "");
-  const liters = Math.round(Number(item.liters) * 100) / 100;
+  const rounded = Math.round(Number(item.liters) * 100) / 100;
+  const liters = item.liters !== null && Number.isFinite(rounded) && rounded > 0 && rounded <= MAX_LITERS ? rounded : null;
+  const totalWon = positiveInt(item.totalWon, 2_000_000);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return null;
-  if (!Number.isFinite(liters) || liters <= 0 || liters > MAX_LITERS) return null;
+  // 넣은 양이나 결제 금액 가운데 하나는 있어야 주유 기록이다.
+  if (liters === null && totalWon === null) return null;
   return {
     date,
     liters,
     pricePerLiter: positiveInt(item.pricePerLiter, 5000),
-    totalWon: positiveInt(item.totalWon, 2_000_000),
+    totalWon,
     stationName: cleanName(item.stationName),
   };
 }
