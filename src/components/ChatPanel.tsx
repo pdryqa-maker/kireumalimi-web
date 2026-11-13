@@ -164,12 +164,13 @@ function toTurns(messages: Message[]) {
     .map((turn) => ({ ...turn, content: turn.content.slice(0, MAX_TURN_LENGTH) }));
 }
 
-// 시간대 인사(한국 시간)
+// 시간대 인사(한국 시간). 번역 투("좋은 저녁이에요") 대신 사람끼리 건네는 말로 쓴다.
 function greeting(hour: number) {
   if (hour >= 5 && hour < 11) return "좋은 아침이에요";
-  if (hour >= 11 && hour < 17) return "좋은 오후예요";
-  if (hour >= 17 && hour < 22) return "좋은 저녁이에요";
-  return "늦은 시간이에요";
+  if (hour >= 11 && hour < 14) return "점심은 드셨어요?";
+  if (hour >= 14 && hour < 18) return "오후도 힘내세요";
+  if (hour >= 18 && hour < 22) return "오늘 하루 수고 많으셨어요";
+  return "늦은 시간까지 수고 많으세요";
 }
 
 // 다음에 받을 알림 한 줄. 내 알림 조건에 켜 둔 제도·예보 조건으로 셈한다.
@@ -489,11 +490,11 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
             <div className="flex flex-col items-center text-center">
               <span aria-hidden="true" className="flame-orb flame-orb-glow size-16 sm:size-[4.5rem]" />
               <p className="mt-5 text-lg text-ink-soft">
-                {mounted ? greeting(kstClock().hour) : "반가워요"}
-                {loggedIn ? `, ${profile.name}님` : ""}
+                {loggedIn ? `${profile.name}님, ` : ""}
+                {mounted ? greeting(kstClock().hour) : "안녕하세요"}
               </p>
               <h1 className="mt-1 text-[1.75rem] leading-tight font-bold tracking-tight text-balance sm:text-4xl">
-                오늘은 어디서 넣을까요?
+                기름 넣으러 가세요?
               </h1>
             </div>
 

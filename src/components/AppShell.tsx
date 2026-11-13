@@ -1,11 +1,11 @@
 "use client";
 
-// 화면 틀: 넓은 화면은 왼쪽 메뉴, 휴대폰은 아래 탭. 위쪽에는 기관 로고와 내 위치·내 정보가 있다.
+// 화면 틀: 넓은 화면은 왼쪽 메뉴, 휴대폰은 아래 탭. 위쪽에는 기관 로고와 로그인(내 정보)이 있다.
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signedIn } from "@/lib/profile";
-import { BellIcon, ChatIcon, HomeHeatIcon, PinIcon, UserIcon } from "./icons";
+import { BellIcon, ChatIcon, HomeHeatIcon, UserIcon } from "./icons";
 import { useMounted, useProfile } from "./useStored";
 
 const NAV = [
@@ -32,21 +32,6 @@ function Avatar({ size = "size-9" }: { size?: string }) {
     <span aria-hidden="true" className={`grid ${size} place-items-center rounded-full bg-accent text-sm font-semibold text-on-accent`}>
       {profile.name.slice(0, 1)}
     </span>
-  );
-}
-
-function PlaceChip() {
-  const profile = useProfile();
-  const mounted = useMounted();
-  const place = mounted ? (profile.location?.label ?? profile.area?.name ?? null) : null;
-  return (
-    <Link
-      href="/login"
-      className="flex max-w-48 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-ink-soft shadow-raised-sm hover:text-ink"
-    >
-      <PinIcon className="size-4 shrink-0 text-flame" />
-      <span className="truncate">{place ?? "위치 설정"}</span>
-    </Link>
   );
 }
 
@@ -97,9 +82,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="text-[17px] font-bold tracking-tight">기름알리미</span>
             </Link>
             <div className="ml-auto flex items-center gap-2.5">
-              <span className="hidden sm:block">
-                <PlaceChip />
-              </span>
               {loggedIn ? (
                 <Link href="/login" aria-label={`${profile.name}님 내 정보`} className="lg:hidden">
                   <Avatar />

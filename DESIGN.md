@@ -44,9 +44,9 @@ Rewritten on 2026-11-13 when the screen moved from the stone neumorphic console 
 
 **North star: "A clear morning forecourt."** White paper, thin grey lines, and one warm flame. The screen should feel like asking a calm attendant who already knows your car and your street.
 
-- Desktop: a 5.5rem left menu (team mark, 주유 챗봇, 내 알림, 등유 안심, 내 정보, avatar at the bottom), a slim header (한국석유공사 logo, 기름알리미, my place chip, login), and one centered 48rem column.
+- Desktop: a 5.5rem left menu (team mark, 주유 챗봇, 내 알림, 등유 안심, 내 정보, avatar at the bottom), a slim header (한국석유공사 logo, 기름알리미, login or the user's avatar; no place chip, since the home summary already shows 내 위치), and one centered 48rem column.
 - Phone: the same header, content, and a floating pill tab bar at the bottom with the same four destinations.
-- The chat home opens with the flame orb, a time-of-day greeting with the user's name, "오늘은 어디서 넣을까요?", a three-cell summary (내 위치, 내 차, 다음 알림) for signed-in users or a login prompt for guests, four question cards with icons, and a row of chips.
+- The chat home opens with the flame orb, a time-of-day greeting in everyday Korean with the user's name first ("재원님, 오늘 하루 수고 많으셨어요"), "기름 넣으러 가세요?", a three-cell summary (내 위치, 내 차, 다음 알림) for signed-in users or a login prompt for guests, four question cards with icons, and a row of chips.
 
 ## Colors
 
@@ -62,7 +62,7 @@ Rewritten on 2026-11-13 when the screen moved from the stone neumorphic console 
 
 ## Typography
 
-Pretendard Variable only. The greeting line is 1.125rem Soft Ink; the question under it is 1.75rem (2.25rem on wide screens) bold with tight tracking. Prices stay the heaviest thing on any answer card, bold tabular numerals, each with its 기준 시각. Body 15px, labels 0.75rem. Korean breaks between words (`word-break: keep-all`).
+Pretendard Variable only. The greeting line is 1.125rem Soft Ink and reads like something a person would say, never a translated "Good evening"; the question under it is 1.75rem (2.25rem on wide screens) bold with tight tracking. Prices stay the heaviest thing on any answer card, bold tabular numerals, each with its 기준 시각. Body 15px, labels 0.75rem. Korean breaks between words (`word-break: keep-all`).
 
 ## Elevation and shape
 
