@@ -1,10 +1,29 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { answer, type ChatTurn } from "@/lib/chatbot";
+import { answer, type ChatImage, type ChatTurn } from "@/lib/chatbot";
 import { cleanProfile } from "@/lib/profile";
 import { limitByClient, limitDaily } from "@/lib/rateLimit";
 
 const MAX_TURNS = 20;
 const MAX_LENGTH = 500;
+// 영수증 사진. 브라우저에서 줄여 보내므로 base64로 2.8MB(원본 약 2MB)면 넉넉하다. Vercel 요청 한도(4.5MB) 안이다.
+const MAX_IMAGE_CHARS = 2_800_000;
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function imageFrom(value: unknown): ChatImage | null | undefined {
+  if (value === undefined || value === null) return null;
+  const image = value as Partial<ChatImage>;
+  if (
+    typeof image.mediaType !== "string" ||
+    !IMAGE_TYPES.has(image.mediaType) ||
+    typeof image.data !== "string" ||
+    image.data.length === 0 ||
+    image.data.length > MAX_IMAGE_CHARS ||
+    !/^[A-Za-z0-9+/]+=*$/.test(image.data)
+  ) {
+    return undefined;
+  }
+  return { mediaType: image.mediaType, data: image.data };
+}
 
 function isValid(history: unknown): history is ChatTurn[] {
   return (
@@ -33,10 +52,14 @@ export async function POST(request: Request) {
   if (!isValid(body?.messages)) {
     return Response.json({ error: "질문 형식이 올바르지 않습니다." }, { status: 400 });
   }
+  const image = imageFrom(body.image);
+  if (image === undefined) {
+    return Response.json({ error: "사진은 2MB 이하의 JPG, PNG, WEBP만 보낼 수 있어요." }, { status: 400 });
+  }
 
   try {
     // 내 정보는 브라우저가 보낸 값이라 서버에서 다시 검사해 쓴다.
-    return Response.json(await answer(body.messages, cleanProfile(body.profile)));
+    return Response.json(await answer(body.messages, cleanProfile(body.profile), image));
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
       return Response.json({ error: "Claude API 키를 확인해 주세요." }, { status: 500 });

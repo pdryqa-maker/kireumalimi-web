@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import AlertsManager from "@/components/AlertsManager";
-import { ULSAN_AREAS } from "@/lib/stations";
 
 export const metadata: Metadata = {
   title: "내 알림 조건 · 기름알리미",
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function AlertsPage() {
-  return <AlertsManager areas={ULSAN_AREAS} />;
+  return <AlertsManager />;
 }

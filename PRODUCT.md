@@ -27,7 +27,7 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 
 ## Operating Context
 
-- Demo region: 울산 울주군 (울산 is the 석유공사 headquarters city).
+- Demo region: 울산 울주군 (울산 is the 석유공사 headquarters city). Since 2026-11-13 the chatbot and alerts work for any 시도·시군구 nationwide; the demo still starts in 울주군.
 - Demo is recorded on video; the site is also publicly deployed at https://kireumalimi-web.vercel.app with call limits. Deadline 2026-11-20.
 - Team 유일무이(油一無二) of four, working in one repository: github.com/pdryqa-maker/kireumalimi-web.
 
@@ -40,6 +40,7 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 - Added 2026-11-13 (third pass): a bright white redesign (left menu on desktop, bottom tabs on phones) with a personalized home; 간편 로그인 that keeps name, location and car only in the browser (no password); nationwide "my location" lookups (phone location converted to KATEC, rounded to 100 m, which also fills the user's 시군구 from the nearest station's SIGUNCD; or an 오피넷 area code picked by hand); the chatbot prompt and tools follow the saved profile (coordinates never go to the AI); and `/alerts`, where users set price, 최고가격, 유류세 and 주유 예보 conditions and see which alerts they would get and when.
 - Added 2026-11-13 (fourth pass): the home opens with 오늘의 기름 소식 instead of a generic greeting: 오피넷 average prices for my area and nationwide with the change since yesterday, the 최고가격 round in force, days left in the 유류세 cut, and the next alert. Real news articles are not shown; a news feed would need a separate source and a rule for checking it.
 - Changed 2026-11-13: the 등유 안심 menu, home line and card button were removed from 기름알리미. The two apps will sit under one parent site later; until then the chatbot still points kerosene-household questions to 등유 안심.
+- Added 2026-11-13 (fifth pass): nationwide areas for the chatbot and `/alerts` (area names like '부산 해운대구' resolved to 오피넷 codes; 광주 and 전남 come as one '전남광주' since the 2026-07-01 merger); a price explainer (change since yesterday, 7-day national change, which round the 최고가격 has held since, average price vs the supply cap, 유류세 cut; no causes outside those values); station lookup by name (`searchByName`); a standing check for a station (gap to the 시군구 average, rank within 5 km, cheaper option nearby), which also answers whether an 알뜰 station is really cheap; and receipt photos read by Claude into a fill record card the user confirms before saving (photo not stored; card and approval numbers ignored).
 - Not built here on purpose: real Kakao login and account storage (needs a Kakao app, keys on the teammate's Vercel, and a database), address search (needs a geocoding key), 화물차 보조금 단가, 면세유, and research-institute estimates (official values not verified, or not official); Kakao delivery (prototype shows message previews only); road distance (straight-line only).
 - API keys (오피넷, Claude) stay server-side in `.env.local`; the repository is public.
 - The Vercel deployment is public; `src/lib/rateLimit.ts` caps calls per visitor and per server instance.

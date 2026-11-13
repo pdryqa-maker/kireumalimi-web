@@ -26,7 +26,7 @@ http://localhost:3000 에서 확인합니다.
 | 주유 챗봇 | 지현민, 배재원 | `src/app/chat/`, `src/components/ChatPanel.tsx` |
 | 고정 질문 API | 지현민 | `src/app/api/fixed-question/` |
 | 오피넷 API 프록시 | 지현민 | `src/app/api/opinet/[endpoint]/`, `src/lib/opinet.ts` |
-| 주유소 조회(울산 최저가, 상세·기준 시각) | 지현민 | `src/lib/stations.ts`, `src/app/api/stations/` |
+| 주유소 조회(전국 최저가, 상세·기준 시각) | 지현민 | `src/lib/stations.ts`, `src/app/api/stations/` |
 | 자유 질문 챗봇(Claude가 조회 기능을 골라 답함) | 지현민 | `src/lib/chatbot.ts`, `src/app/api/chat/` |
 | 실질비용 추천(거리까지 따진 순위) | 배재원 | `src/lib/stations.ts`의 `findByTotalCost`, `src/lib/places.ts`, `src/app/api/stations/total-cost/` |
 | 제도 변경 알림 미리보기(유류세 인하) | 배재원 | `src/lib/policy.ts`, `src/app/api/alert-preview/`, `src/components/AnswerCards.tsx` |
@@ -38,6 +38,10 @@ http://localhost:3000 에서 확인합니다.
 | 오늘의 기름 소식(전국·내 지역 평균가, 제도 일정) | 배재원 | `src/lib/briefing.ts`, `src/components/FuelNews.tsx`, `src/app/api/briefing/` |
 | 내 위치 조회(전국, 휴대폰 위치 → 오피넷 좌표) | 배재원 | `src/lib/katec.ts`, `src/lib/origin.ts`, `src/lib/stations.ts`의 `findNearby`·`areaList`·`areaAt`, `src/app/api/stations/nearby/`, `src/app/api/areas/` |
 | 내 알림 조건(조건을 걸어 두고 맞을 때 알림) | 배재원 | `src/lib/conditions.ts`, `src/lib/watchSettings.ts`, `src/components/AlertsManager.tsx`, `src/app/alerts/` |
+| 전국 지역 이름 찾기(챗봇이 '부산 해운대구'를 지역코드로) | 배재원 | `src/lib/stations.ts`의 `resolveArea` |
+| 상호로 찾기, 동네에서 싼 편인지(단골 점검·알뜰 확인) | 배재원 | `src/lib/stations.ts`의 `searchStations`·`stationStanding` |
+| 가격 해설(왜 올랐는지, 상한과 내 동네 가격 비교) | 배재원 | `src/lib/briefing.ts`의 `priceStory` |
+| 영수증 사진으로 주유 기록 | 배재원 | `src/lib/chatbot.ts`의 `propose_fill_record`, `src/app/api/chat/`, `src/components/ChatPanel.tsx`, `src/components/AnswerCards.tsx`의 `FillProposalCard` |
 | 숫자 대조(AI 답변 속 숫자 검사) | 배재원 | `src/lib/numbers.ts` |
 | 호출 제한 | 배재원 | `src/lib/rateLimit.ts` |
 
@@ -56,6 +60,8 @@ http://localhost:3000 에서 확인합니다.
 
 지역코드(`areaCode`)는 거의 바뀌지 않아 하루 동안 재사용합니다.
 
+챗봇 서버는 위 프록시를 거치지 않고 오피넷을 직접 부릅니다(`src/lib/opinet.ts`). 상호 검색(`searchByName`), 최근 7일 전국 평균(`avgRecentPrice`), 주유소 상세(`detailById`), 반경 조회(`aroundAll`), 평균가(`avgAllPrice`·`avgSidoPrice`·`avgSigunPrice`), 최저가(`lowTop10`)를 씁니다.
+
 쓸 수 있는 API는 `route.ts`의 `ALLOWED_ENDPOINTS`에 있습니다. 필요한 API가 없으면 여기에 추가합니다.
 
 ## 기능 요약
@@ -70,7 +76,11 @@ http://localhost:3000 에서 확인합니다.
 - **간편 로그인과 개인화**: 부를 이름, 내 위치, 내 차(유종, 한 번에 넣는 양, 연비)를 받아 이 브라우저에만 저장합니다. 비밀번호는 받지 않습니다(실제 서비스는 카카오 로그인으로 제안). 로그인하면 첫 화면 인사와 추천 질문, 출발 위치, 유종·주유량이 내 정보로 바뀌고, 자유 질문 때 서버가 내 정보를 다시 검사해 AI 지시문에 넣습니다. 정확한 좌표는 AI에 보내지 않고 주유소 조회에만 씁니다. 위치는 두 가지로 정합니다. '현재 위치로 찾기'는 휴대폰 위치를 받아 가장 가까운 주유소의 시군구(오피넷 상세 정보의 SIGUNCD)로 내 지역까지 함께 채우고, '직접 입력하기'는 시도·시군구를 고릅니다.
 - **오늘의 기름 소식**: 첫 화면에 내 지역과 전국의 내 유종 평균 가격(오피넷 `avgSigunPrice`·`avgSidoPrice`·`avgAllPrice`)이 어제보다 얼마나 움직였는지, 지금 적용 중인 석유 최고가격 차수, 유류세 인하가 며칠 남았는지, 로그인했다면 다음에 받을 알림을 보여 줍니다. 맨 위 한 줄은 그중 가장 먼저 알아야 할 소식(최고가격 새 고시 적용 직전, 유류세 인하 종료 14일 안, 아니면 내 지역 평균가 움직임)입니다. 평균가는 1시간 동안 재사용합니다. 뉴스 기사는 쓰지 않습니다.
 - **내 위치(전국)**: 휴대폰 위치(위경도)를 오피넷 좌표(KATEC)로 바꿔 반경 5km 조회를 합니다. 위치는 100m 단위로 줄여 저장합니다. 위치를 쓰지 않으면 오피넷 지역코드로 시도·시군구를 골라 그 지역 최저가를 봅니다.
-- **내 알림 조건**(`/alerts`): 가격(지역·유종·기준 가격), 최고가격 새 고시 발표 직후, 유류세 인하 종료 7일 전, 내 차 주유 예보를 걸어 두면 받게 될 알림과 보낼 때를 미리 보여 줍니다. 밤 9시~아침 8시에는 보내지 않고, 같은 알림은 한 번만, 하루 2건까지입니다. 지금은 보내지 않고 미리보기만 합니다.
+- **내 알림 조건**(`/alerts`): 가격(전국 시도·시군구, 유종, 기준 가격), 최고가격 새 고시 발표 직후, 유류세 인하 종료 7일 전, 내 차 주유 예보를 걸어 두면 받게 될 알림과 보낼 때를 미리 보여 줍니다. 밤 9시~아침 8시에는 보내지 않고, 같은 알림은 한 번만, 하루 2건까지입니다. 지금은 보내지 않고 미리보기만 합니다.
+- **전국 지역**: 챗봇과 내 알림은 전국 시도·시군구 어디나 됩니다. 챗봇은 '부산 해운대구', '경기 수원시', '전남 순천시'처럼 시도를 앞에 넣은 이름을 오피넷 지역코드로 바꿔 조회합니다(`resolveArea`). '중구'처럼 여러 시도에 있는 이름은 시도 없이 찾지 않습니다. 2026년 7월 1일 전남광주통합특별시 출범으로 오피넷은 광주와 전남을 '전남광주'로 묶어 주므로, '광주 북구'나 '전라남도 순천'으로 물어도 찾습니다. 거리까지 따진 추천만은 출발 좌표가 필요해 내 위치나 울주군 읍면에서 씁니다.
+- **가격 해설**: "요즘 기름값 왜 이래?"에 내 지역·전국 평균의 어제 대비 변화, 전국 평균의 최근 7일 변화, 지금 최고가격이 몇 차부터 같은 값인지, 평균 판매가와 공급가 상한의 차이, 유류세 인하로 답합니다. 국제유가나 환율처럼 결과에 없는 원인은 말하지 않고, 앞으로의 가격도 예측하지 않습니다.
+- **단골 점검·진짜 알뜰 찾기**: 상호로 주유소를 찾고(`searchByName`), 그 주유소가 시군구 평균보다 얼마나 싼지, 직선 5km 안에서 몇 번째로 싼지, 더 싼 곳이 어디인지 알려 줍니다. 알뜰주유소라도 동네에서 정말 싼지 같은 방법으로 확인합니다.
+- **영수증 사진 주유 기록**: 사진 버튼으로 영수증을 보내면 AI가 날짜·넣은 양·리터당 가격·결제 금액·주유소를 읽어 카드로 보여 주고, 이용자가 '주유 기록에 넣기'를 눌러야 저장합니다. 서버는 날짜(1년 안의 지난 날)와 양(1~300L)을 다시 검사합니다. 사진은 브라우저에서 1,600px JPEG로 줄여 Claude API로 보내고 저장하지 않으며, 카드 번호·승인 번호는 읽지 않게 했습니다. 기록이 2번이 되면 바로 다음 주유일 예보로 이어집니다.
 - **대화 기록**: 버튼으로 받은 카드 답도 요약으로 대화 기록에 넣어, 자유 질문 때 AI가 앞 질문에 다시 답하지 않습니다.
 
 ## 오피넷에 없는 값
