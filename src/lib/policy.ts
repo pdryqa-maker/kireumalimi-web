@@ -29,6 +29,14 @@ export const PRICE_CAP = {
       prices: { 휘발유: 1784, 경유: 1773, 실내등유: 1380 } as Record<string, number>,
       source: "산업통상부 11차 석유 최고가격 고시",
     },
+    {
+      round: 12,
+      announcedOn: "2026-11-13",
+      startsOn: "2026-11-14",
+      // 11차와 같은 값으로 동결(8차부터 다섯 번째 연속 동결). 적용 기간은 11월 14일 0시부터 4주.
+      prices: { 휘발유: 1784, 경유: 1773, 실내등유: 1380 } as Record<string, number>,
+      source: "산업통상부 12차 석유 최고가격 고시",
+    },
   ],
 };
 

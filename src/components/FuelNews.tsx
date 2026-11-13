@@ -43,14 +43,24 @@ const amount = (diff: number) => Math.round(Math.abs(diff) * 10) / 10;
 const moved = (diff: number) =>
   amount(diff) === 0 ? "어제와 같아요" : `어제보다 ${won(amount(diff))}원 ${diff > 0 ? "올랐어요" : "내렸어요"}`;
 
+// 최근 고시의 내 유종 상한이 직전 차수와 얼마나 다른지. 직전 차수가 없으면 null.
+function capChange(fuel: string) {
+  const [previous, current] = [PRICE_CAP.rounds.at(-2), PRICE_CAP.rounds.at(-1)!];
+  const capWon = current.prices[fuel];
+  const previousWon = previous?.prices[fuel];
+  if (capWon === undefined || previousWon === undefined) return null;
+  return { round: previous!.round, diffWon: capWon - previousWon };
+}
+
 // 인사 대신 보여 줄 오늘의 첫 소식. 날짜가 정해진 제도 변화가 가까우면 그것부터, 아니면 내 지역 평균가 움직임.
 export function newsHeadline(today: string, fuel: string, briefing: FuelBriefing | null): string | null {
   const cap = PRICE_CAP.rounds.at(-1)!;
-  if (today >= cap.announcedOn && today < cap.startsOn) {
-    const when = cap.startsOn === addDays(today, 1) ? "내일" : monthDay(cap.startsOn);
-    return `${when}부터 ${cap.round}차 석유 최고가격이 적용돼요`;
+  if (today >= cap.announcedOn && today <= cap.startsOn) {
+    const when = today === cap.startsOn ? "오늘" : cap.startsOn === addDays(today, 1) ? "내일" : monthDay(cap.startsOn);
+    const change = capChange(fuel);
+    const same = change?.diffWon === 0 ? `. ${change.round}차와 같아요` : "";
+    return `${when}부터 ${cap.round}차 석유 최고가격이 적용돼요${same}`;
   }
-  if (today === cap.startsOn) return `오늘부터 ${cap.round}차 석유 최고가격이 적용돼요`;
   const left = daysBetween(today, FUEL_TAX_CUT.endsOn);
   if (left >= 0 && left <= 14) return left === 0 ? "유류세 인하는 오늘까지예요" : `유류세 인하가 ${left}일 남았어요`;
   const local = briefing?.local ?? (briefing?.national ? { ...briefing.national, area: "전국" } : null);
@@ -64,6 +74,14 @@ function priceRow(Icon: Row["Icon"], area: string, fuel: string, price: number, 
   return { Icon, label: `${area} ${fuelName(fuel)} 평균`, value: `${won(Math.round(price))}원`, note: moved(diff) };
 }
 
+// 소식 칸에 덧붙일 직전 차수 대비 한마디
+function capNote(fuel: string) {
+  const change = capChange(fuel);
+  if (!change) return "";
+  if (change.diffWon === 0) return `, ${change.round}차와 같아요`;
+  return `, ${change.round}차보다 ${won(Math.abs(change.diffWon))}원 ${change.diffWon < 0 ? "내렸어요" : "올랐어요"}`;
+}
+
 function policyRows(today: string, fuel: string): Row[] {
   const cap = PRICE_CAP.rounds.at(-1)!;
   const capWon = cap.prices[fuel];
@@ -74,7 +92,7 @@ function policyRows(today: string, fuel: string): Row[] {
       Icon: CalendarIcon,
       label: `${cap.round}차 석유 최고가격`,
       value: today < cap.startsOn ? `${dayWithWeekday(cap.startsOn)}부터 적용` : `${monthDay(cap.startsOn)}부터 적용 중`,
-      note: capWon ? `${fuelName(fuel)} 공급가 상한 ${won(capWon)}원` : "휘발유, 경유, 실내등유가 대상이에요",
+      note: capWon ? `${fuelName(fuel)} 공급가 상한 ${won(capWon)}원${capNote(fuel)}` : "휘발유, 경유, 실내등유가 대상이에요",
     },
     {
       Icon: ReceiptIcon,
