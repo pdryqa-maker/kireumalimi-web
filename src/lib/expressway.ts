@@ -119,10 +119,11 @@ const meters = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const km = (m: number) => Math.round(m / 100) / 10;
 
 // 노선·방향의 휴게소 주유소를 출발지에서 지나는 순서대로 돌려주고, 출발지가 있으면 근처 최저가와 견준다.
-export async function highwayStations(fuel: string, route: string, direction: string, origin: Origin | null, liters: number) {
+// liters가 null이면(금액을 리터로 바꾸지 못함) 리터당 차이만 주고 아끼는 금액(savingWon)은 null이다.
+export async function highwayStations(fuel: string, route: string, direction: string, origin: Origin | null, liters: number | null) {
   const field = HIGHWAY_FUELS[fuel];
   if (!field) throw new RangeError("고속도로 휴게소 가격은 휘발유, 경유, LPG(자동차부탄)만 있습니다.");
-  if (!Number.isInteger(liters) || liters < 1 || liters > MAX_LITERS) {
+  if (liters !== null && (!Number.isInteger(liters) || liters < 1 || liters > MAX_LITERS)) {
     throw new RangeError(`주유량은 1~${MAX_LITERS}리터 사이 정수여야 합니다.`);
   }
   const place = origin === null ? null : resolveOrigin(origin);
@@ -194,7 +195,7 @@ export async function highwayStations(fuel: string, route: string, direction: st
           vsCheapestWon: cheapest.pricePerLiter! - best.price,
           liters,
           // 근처가 더 비싸면 아끼는 돈은 없다(0). 얼마나 비싼지는 vsAverageWon(음수)에 있다.
-          savingWon: vsAverageWon > 0 ? Math.round(vsAverageWon * liters) : 0,
+          savingWon: liters === null ? null : vsAverageWon > 0 ? Math.round(vsAverageWon * liters) : 0,
           message: vsAverageWon > 0 ? BOARDING_MESSAGE : "출발지 근처가 이 길 휴게소 평균보다 싸지 않아, 휴게소에서 넣어도 됩니다.",
         };
       } else {

@@ -95,7 +95,7 @@ ${profileBlock(profile, ledger)}
 - '이번 달 기름값 얼마 썼어?', '지난달 주유 리포트 보여 줘'처럼 내 주유 씀씀이를 물으면 get_fuel_report로 답합니다. 주행거리는 넣은 양 × 연비로 추정한 값이라고 밝힙니다. 금액을 모르는 주유(wonUnknownFills)가 있으면 쓴 돈은 그 주유를 뺀 값이라고 말하고, 양을 모르는 주유(litersUnknownFills)가 있으면 넣은 양과 주행거리에서 빠졌다고 말합니다. 그달 기록이 없으면 영수증 사진이나 주유 기록으로 먼저 남겨 달라고 안내합니다.
 - '○○주유소 믿을 만해?', '영수증 가격이 이상해'처럼 주유소를 점검해 달라고 하면 search_station_by_name으로 주유소를 찾은 뒤 check_station_trust로 답합니다. 이름을 말하지 않으면 get_fuel_report의 stations(자주 간 주유소)에서 고르거나 어느 주유소인지 묻습니다. checks의 항목을 짧게 말하고, 공개 정보와 내 영수증을 맞춰 본 결과이지 주유소의 잘못을 판단한 것이 아니라고 밝힙니다. 가짜석유 같은 말로 단정하지 않습니다.
 - 요소수 재고나 가격을 물으면 find_urea_stations로 답합니다. 근처를 말하면 place로, 지역을 말하면 area로 찾습니다. 주유소 이름, 가격(원/L), 전화번호, 보고 시각을 알려 주고, 재고는 하루 네 번 바뀌는 보고 값이라 가기 전에 전화로 확인하라고 합니다.
-- '서울 가는데 어디서 넣을까?', '경부고속도로 휴게소 기름값'처럼 고속도로로 가는 길에 넣을 곳이나 휴게소 주유소 가격을 물으면 find_highway_stations로 답합니다. 출발지와 목적지로 노선과 방향(가는 쪽 도시)을 고르고, 어느 고속도로로 갈지 애매하면 먼저 되묻습니다. 출발지가 이용자 위치나 울주군 읍면이면 place로 넣고, 아니면 none입니다. order에 적힌 기준으로 ahead를 번호 붙여 이름, 가격, 직선거리로 알리고, cheapest가 ahead에 없으면 '이 길에서 가장 싼 곳'으로 따로 알리며, remaining과 average를 말합니다. beforeBoarding이 있으면 마지막에 그 message로 시작해 근처 주유소 이름과 가격, 휴게소 평균보다 리터당 몇 원 싼지(vsAverageWon), 넣는 양 기준 아끼는 금액(savingWon)을 말합니다. 휴게소 가격은 도로공사 값이고 거리는 직선거리라고 밝힙니다. 노선이나 방향이 없다는 오류가 오면 오류에 적힌 목록에서 골라 한 번 더 조회합니다.
+- '서울 가는데 어디서 넣을까?', '경부고속도로 휴게소 기름값'처럼 고속도로로 가는 길에 넣을 곳이나 휴게소 주유소 가격을 물으면 find_highway_stations로 답합니다. 출발지와 목적지로 노선과 방향(가는 쪽 도시)을 고르고, 어느 고속도로로 갈지 애매하면 먼저 되묻습니다. 출발지가 이용자 위치나 울주군 읍면이면 place로 넣고, 아니면 none입니다. order에 적힌 기준으로 ahead를 번호 붙여 이름, 가격, 직선거리로 알리고, cheapest가 ahead에 없으면 '이 길에서 가장 싼 곳'으로 따로 알리며, remaining과 average를 말합니다. beforeBoarding이 있으면 마지막에 그 message로 시작해 근처 주유소 이름과 가격, 휴게소 평균보다 리터당 몇 원 싼지(vsAverageWon), fill.label 기준으로 아끼는 금액(savingWon)을 말합니다. 휴게소 가격은 도로공사 값이고 거리는 직선거리라고 밝힙니다. 노선이나 방향이 없다는 오류가 오면 오류에 적힌 목록에서 골라 한 번 더 조회합니다.
 - 대화 기록에는 화면 카드로 보여 준 답이 요약으로 들어 있습니다. 이미 답한 질문에 다시 답하지 말고 마지막 질문에만 답합니다.
 - 도구로 답할 수 없는 질문이면, 지금 안내할 수 있는 것(전국 지역 최저가, 내 주유 월간 리포트, 주유소 점검, 요소수 재고, 고속도로 가는 길 휴게소 주유소와 타기 전 비교, 주유소 이름으로 찾기, 주유소가 동네에서 싼 편인지, 요즘 가격 움직임과 최고가격 해설, 주유소 상세, 내 위치나 울주군 읍면 기준 거리까지 따진 추천, 유류세 인하 종료 시 최대 금액, 가격 알림 조건, 주유 기록이나 영수증 사진으로 다음 주유일 계산, 지난 최고가격 고시 뒤 울주군 가격 변화)을 알립니다.
 - 존댓말로 5문장 안쪽으로 답합니다. 별표, 샵, 표 같은 마크다운 기호는 쓰지 않습니다. 여러 곳을 알려 줄 때는 줄을 바꿔 번호를 붙입니다.`;
@@ -406,9 +406,9 @@ const tools = (profile: Profile): Anthropic.Beta.BetaTool[] => [
           enum: ["none", ...placeChoices(profile).map(([key]) => key)],
           description: `출발 위치. 이용자 위치나 울주군 읍면이 아니면 none. ${describe(placeChoices(profile))}`,
         },
-        liters: { type: "integer", description: "주유량(리터). 말하지 않으면 이용자 정보의 값, 없으면 40" },
+        ...FILL_PARAMS,
       },
-      required: ["fuel", "route", "direction", "place", "liters"],
+      required: ["fuel", "route", "direction", "place", "fill", "value"],
       additionalProperties: false,
     },
   },
@@ -578,13 +578,15 @@ async function runTool(name: string, input: Record<string, unknown>, { proposals
       return stationStanding(String(input.station_id), String(input.fuel));
     case "find_highway_stations": {
       const place = String(input.place);
-      return highwayStations(
+      const fill = await fillOf(input, String(input.fuel), profile, ledger);
+      const result = await highwayStations(
         String(input.fuel),
         String(input.route),
         String(input.direction),
         place === "none" ? null : originOf(place, profile),
-        Number(input.liters),
+        fill?.liters ?? null,
       );
+      return { ...result, fill, ...(fill ? {} : { fillNote: NO_FILL_NOTE }) };
     }
     case "explain_price": {
       const area = String(input.area ?? "").trim();
