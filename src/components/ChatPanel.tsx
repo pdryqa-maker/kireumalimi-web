@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { AlertProposal, FillProposal } from "@/lib/chatbot";
 import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
+import type { FuelReport } from "@/lib/fuelReport";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { DEFAULT_PLACE, PLACES } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
 import { fuelName, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
+import { addLedgerEntry, ledgerForServer, ledgerStore, parseLedger } from "@/lib/savedLedger";
 import { parseWatch, watchStore } from "@/lib/watchSettings";
 import {
   AlertCard,
@@ -28,7 +30,7 @@ import {
   type PriceRow,
   type TaxImpact,
 } from "./AnswerCards";
-import { FillLogCard, ForecastCard, forecastMessage } from "./FillCards";
+import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary } from "./FillCards";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 import { CalendarIcon, CameraIcon, PinIcon, ReceiptIcon, RouteIcon } from "./icons";
@@ -43,6 +45,8 @@ const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
 const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
 const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
 const EXPLAIN_QUESTION = "요즘 기름값 왜 이래?";
+const REPORT_QUESTION = "이번 달 주유 리포트 보여 줘";
+const UREA_QUESTION = "요소수 재고 있는 주유소 알려 줘";
 // 영수증 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
 const PHOTO_MAX_SIDE = 1600;
 const PHOTO_MAX_CHARS = 2_800_000;
@@ -91,6 +95,7 @@ type Reply =
   | { from: "bot"; summary: string; cap: CapNotice }
   | { from: "bot"; summary: string; fillForm: true }
   | { from: "bot"; summary: string; forecast: FillForecast; forecastCost: CostResult | null }
+  | { from: "bot"; summary: string; report: FuelReport }
   | { from: "bot"; error: string; retry: () => void };
 type Message = { from: "user"; text: string; photo?: string } | Reply;
 type Photo = { preview: string; mediaType: "image/jpeg"; data: string };
@@ -288,6 +293,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   useStored(alertStore, parseAlerts);
   useStored(watchStore, parseWatch);
   useStored(fillStore, parseFills);
+  const ledger = useStored(ledgerStore, parseLedger);
   const fuel = fuelChoice ?? profile.fuel;
   const liters = litersChoice ?? profile.liters;
   const place = placeChoice === MY && !profile.location ? DEFAULT_PLACE : (placeChoice ?? (profile.location ? MY : DEFAULT_PLACE));
@@ -421,6 +427,20 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
       summary: "주유 기록 입력 카드를 보여 줌. 이용자가 날짜와 리터를 넣고 계산을 누르면 다음 주유일을 알려 줌.",
     }));
 
+  // 이번 달 주유 리포트. AI 없이 장부로 셈하고, 단가는 그날 시도 평균과 비교한다.
+  const askReport = () => {
+    const car = { ...profile, fuel };
+    ask(REPORT_QUESTION, "detail", async () => {
+      const { ok, body } = await getJson("/api/fuel-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ledger: ledgerForServer(), profile: car }),
+      });
+      if (!ok || !body?.month) return body?.error ? { from: "bot", text: body.error } : null;
+      return { from: "bot", report: body, summary: reportSummary(body) };
+    });
+  };
+
   function submitForecast(forecast: FillForecast) {
     const [chosenFuel, chosenPlace] = [fuel, place];
     saveFills(forecast.records);
@@ -479,6 +499,8 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           messages: history,
           profile: loggedIn ? profile : undefined,
           image: photo ? { mediaType: photo.mediaType, data: photo.data } : undefined,
+          // 주유 장부는 리포트·주유소 점검 도구가 쓸 때만 AI에 들어간다.
+          ledger: ledgerForServer(),
         }),
       });
       if (!ok || !body?.text) return body?.error ? { from: "bot", text: body.error } : null;
@@ -528,6 +550,14 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     const records = [...parseFills(fillStore.read()).filter((record) => record.date !== fill.date), { date: fill.date, liters: fill.liters }]
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-MAX_RECORDS);
+    // 장부에는 단가·금액·주유소 이름까지 남겨 월간 리포트와 주유소 점검에 쓴다.
+    addLedgerEntry({
+      date: fill.date,
+      liters: fill.litersOnReceipt,
+      pricePerLiter: fill.pricePerLiter,
+      totalWon: fill.totalWon,
+      stationName: fill.stationName,
+    });
     const stored = saveFills(records);
     setFillStatus(id, stored ? "saved" : "unsaved");
     if (!stored) return;
@@ -555,6 +585,9 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
   }
 
   const busy = pending !== null;
+  // 영수증으로 남긴 가장 최근 주유소가 있으면 그곳을 점검하자고 권한다.
+  const lastStation = mounted ? ledger.findLast((entry) => entry.stationName)?.stationName : null;
+  const trustQuestion = lastStation ? `${lastStation} 믿을 만한지 점검해 줘` : "단골 주유소 믿을 만한지 점검해 줘";
   const cards = [
     { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
     { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost, Icon: RouteIcon },
@@ -567,6 +600,9 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
     { label: fixedQuestion, onClick: askFixed },
     { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
     { label: "영수증 사진으로 주유 기록", onClick: pickPhoto },
+    { label: REPORT_QUESTION, onClick: askReport },
+    { label: trustQuestion, onClick: () => askFree(trustQuestion) },
+    { label: UREA_QUESTION, onClick: () => askFree(UREA_QUESTION) },
   ];
   const suggestions = [...cards, ...chips];
   const today = mounted ? kstClock().today : "";
@@ -648,6 +684,9 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
           }
           if ("fillForm" in message) {
             return <FillLogCard key={index} busy={busy} onSubmit={submitForecast} />;
+          }
+          if ("report" in message) {
+            return <ReportCard key={index} report={message.report} onReceipt={pickPhoto} />;
           }
           if ("forecast" in message) {
             return <ForecastCard key={index} forecast={message.forecast} cost={message.forecastCost} />;
@@ -873,7 +912,7 @@ export default function ChatPanel({ fixedQuestion, region }: { fixedQuestion: st
         </div>
 
         {(messages.length > 0 || busy) && (
-          <div className="no-scrollbar -my-2 flex gap-2.5 overflow-x-auto py-2 pr-1 pl-1 sm:flex-wrap sm:overflow-visible">
+          <div className="no-scrollbar -my-2 flex gap-2.5 overflow-x-auto py-2 pr-1 pl-1 lg:flex-wrap lg:overflow-visible">
             {suggestions.map((suggestion) => (
               <button
                 key={suggestion.label}
