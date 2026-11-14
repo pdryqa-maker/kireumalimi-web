@@ -1,15 +1,19 @@
 "use client";
 
-// 실질비용, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
+// 실질비용, 출퇴근 길, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
 import { useState } from "react";
 import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
 import type { Fill } from "@/lib/fillAmount";
 import { MAX_ODOMETER_KM } from "@/lib/ledger";
 import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
-import type { findByTotalCost } from "@/lib/stations";
+import type { findByTotalCost, findCommute } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
+import { discountLine, excludedNote } from "./stationText";
 
 export type CostResult = Awaited<ReturnType<typeof findByTotalCost>>;
+export type CommuteResult = Awaited<ReturnType<typeof findCommute>>;
+
+export { discountLine, excludedNote };
 export type CostStation = CostResult["stations"][number];
 // 제도 금액은 한 번에 넣는 양(fill)으로 셈한다. 금액을 리터로 바꿀 평균가를 못 받으면 fill이 null이고 리터당 금액만 보여 준다.
 export type TaxImpact = Exclude<ReturnType<typeof taxCutImpact>, { error: string }> & { fill: Fill | null };
@@ -84,8 +88,9 @@ export function CostCard({
                   {station.name} <span className="text-sm font-normal text-ink-soft">{station.brand}</span>
                 </span>
                 <span className="block text-xs text-ink-soft tabular-nums">
-                  리터당 {won(station.price)}원 · 직선 {station.distanceKm}km · 오가는 연료비 {won(station.tripWon)}원
+                  리터당 {won(station.paidPrice)}원 · 직선 {station.distanceKm}km · 오가는 연료비 {won(station.tripWon)}원
                 </span>
+                {discountLine(station) && <span className="block text-xs text-ink-soft tabular-nums">{discountLine(station)}</span>}
               </span>
               <span className="shrink-0 text-right">
                 <span className="block text-xl font-bold tabular-nums">
@@ -100,13 +105,69 @@ export function CostCard({
       </ol>
       <p className="mt-3 text-[15px] leading-relaxed">
         {cheapest && cost.extraForCheapestWon > 0
-          ? `가장 싼 ${cheapest.name}(리터당 ${won(cheapest.price)}원)은 ${cheapest.distanceKm}km 떨어져 있어, 거리까지 따지면 ${won(cost.extraForCheapestWon)}원 더 들어요.`
+          ? `가장 싼 ${cheapest.name}(리터당 ${won(cheapest.paidPrice)}원)은 ${cheapest.distanceKm}km 떨어져 있어, 거리까지 따지면 ${won(cost.extraForCheapestWon)}원 더 들어요.`
           : "가장 싼 곳이 거리까지 따져도 가장 덜 들어요."}
       </p>
+      {excludedNote(cost.excludedCount, false) && <p className="mt-2 text-sm">{excludedNote(cost.excludedCount, false)}</p>}
       <p className="mt-2 text-xs text-ink-soft">
         {cost.fill.label}, {cost.kmpl}km/L 기준으로 1km 더 가려면 리터당 약 {cost.breakEvenWonPerKm}원은 더 싸야 해요.
         같은 양을 넣을 때를 비교했어요. {fillBasis(cost.fill)} 거리는 직선거리라 실제 도로는 더 길어요. {PUMP_NOTE}
       </p>
+    </div>
+  );
+}
+
+type CommuteStation = CommuteResult["overlap"][number];
+
+function CommuteRow({ station, note }: { station: CommuteStation; note: string }) {
+  const discount = discountLine(station);
+  return (
+    <li className="flex items-center gap-3 py-3">
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold">
+          {station.name} <span className="text-sm font-normal text-ink-soft">{station.brand}</span>
+        </span>
+        <span className="block text-xs text-ink-soft tabular-nums">{note}</span>
+        {discount && <span className="block text-xs text-ink-soft tabular-nums">{discount}</span>}
+      </span>
+      <span className="shrink-0 text-right">
+        <span className="block text-xl font-bold tabular-nums">
+          {won(station.paidPrice)}
+          <span className="ml-0.5 text-sm font-medium">원</span>
+        </span>
+        <span className="block text-xs font-medium text-ink-soft">리터당</span>
+      </span>
+    </li>
+  );
+}
+
+// 출퇴근 길: 집과 회사 반경에 모두 드는 주유소를 두 거리의 합이 짧은 순으로. 없으면 집 근처·회사 근처 한 곳씩.
+export function CommuteCard({ commute }: { commute: CommuteResult }) {
+  const { overlap, nearHome, nearWork, radiusKm } = commute;
+  const empty = overlap.length === 0 && !nearHome && !nearWork;
+  return (
+    <div className={CARD}>
+      <CardHead title={`출퇴근 길 · 집 ${commute.home} ↔ 회사 ${commute.work} · ${commute.fuel}`} fetchedAt={commute.fetchedAt} />
+      <p className="mt-1 text-xs text-ink-soft">
+        {overlap.length > 0
+          ? `집과 회사에서 모두 반경 ${radiusKm}km 안인 곳, 두 거리의 합이 짧은 순`
+          : `집과 회사 반경 ${radiusKm}km에 함께 드는 곳이 없어 따로 골랐어요`}
+      </p>
+      {empty ? (
+        <p className="mt-3 text-[15px] leading-relaxed">
+          {excludedNote(commute.excludedCount, true, radiusKm) ?? `집과 회사 반경 ${radiusKm}km 안에서 가격을 알린 곳이 없어요.`}
+        </p>
+      ) : (
+        <ol className="mt-1 divide-y divide-hairline">
+          {overlap.map((station) => (
+            <CommuteRow key={station.id} station={station} note={`집 ${station.homeKm}km + 회사 ${station.workKm}km`} />
+          ))}
+          {nearHome && <CommuteRow station={nearHome} note={`집 근처 · 직선 ${nearHome.homeKm}km`} />}
+          {nearWork && <CommuteRow station={nearWork} note={`회사 근처 · 직선 ${nearWork.workKm}km`} />}
+        </ol>
+      )}
+      {!empty && excludedNote(commute.excludedCount, false) && <p className="mt-2 text-sm">{excludedNote(commute.excludedCount, false)}</p>}
+      <p className="mt-3 text-xs text-ink-soft">거리는 직선이라 실제 길은 다를 수 있어요. {PUMP_NOTE}</p>
     </div>
   );
 }

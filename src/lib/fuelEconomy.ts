@@ -91,8 +91,8 @@ export const readingBasis = (reading: KmplReading) =>
     : `가득→가득 실측 연비(${monthDay(reading.from!)}~${monthDay(reading.date)}, ${reading.km!.toLocaleString("ko-KR")}km ÷ ${reading.liters}L)`;
 
 
-// 가득→가득 실측 연비. 쓸 구간이 없으면 null.
-export function measuredKmpl(ledger: LedgerEntry[]): KmplReading | null {
+// 가득→가득 구간(규칙은 위 MEASURE). 오래된 구간부터. 실측 연비와 내 기록의 연비 추이가 함께 쓴다.
+export function measuredSpans(ledger: LedgerEntry[]) {
   const entries = [...ledger].sort((a, b) => a.date.localeCompare(b.date));
   const anchors = entries.flatMap((entry, index) => (entry.full && entry.odometerKm !== null ? [{ entry, index }] : []));
   const spans: { from: string; to: string; km: number; liters: number }[] = [];
@@ -105,6 +105,12 @@ export function measuredKmpl(ledger: LedgerEntry[]): KmplReading | null {
     if (km < MEASURE.minKm || km > MEASURE.maxKm || !(liters > 0) || !isKmpl(km / liters)) continue;
     spans.push({ from: start.entry.date, to: end.entry.date, km, liters });
   }
+  return spans;
+}
+
+// 가득→가득 실측 연비. 쓸 구간이 없으면 null.
+export function measuredKmpl(ledger: LedgerEntry[]): KmplReading | null {
+  const spans = measuredSpans(ledger);
   // 끝에서부터 서로 이어진 구간만 모은다.
   const recent: typeof spans = [];
   for (const span of [...spans].reverse()) {

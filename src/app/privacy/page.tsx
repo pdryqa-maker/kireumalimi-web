@@ -15,13 +15,13 @@ const EFFECTIVE = "2026년 11월 14일";
 const ITEMS = [
   {
     name: "부를 이름, 내 차",
-    detail: "이름, 유종, 차종이나 차 크기, 연비, 한 번에 넣는 금액",
-    purpose: "답을 내 이름과 내 차 기준으로 맞추기",
+    detail: "이름, 유종, 차종이나 차 크기, 연비, 한 번에 넣는 금액, 한 달 주행거리, 요소수가 필요한 차인지, 주유 할인과 뺀 상표",
+    purpose: "답을 내 이름과 내 차 기준으로 맞추기, 다음 주유 계획과 예상 비용, 할인 반영 가격",
   },
   {
     name: "위치",
-    detail: "현재 위치로 찾은 좌표(100m 단위로 줄임)와 위치 이름, 또는 고른 시도·시군구",
-    purpose: "근처 주유소, 거리까지 고려한 추천, 내 지역 평균과 최저가",
+    detail: "현재 위치로 찾은 좌표(100m 단위로 줄임)와 위치 이름, 또는 고른 시도·시군구. 자주 가는 곳(집·회사)의 좌표와 이름",
+    purpose: "근처 주유소, 거리까지 고려한 추천, 출퇴근 길 주유소, 내 지역 평균과 최저가",
   },
   {
     name: "주유 기록",
@@ -48,13 +48,13 @@ const ITEMS = [
 const SENDS = [
   {
     to: "Anthropic(미국)",
-    what: "챗봇 질문과 대화, 보낸 사진, 그리고 내 정보 가운데 부를 이름·내 지역·위치 이름·내 차. 질문마다 이 브라우저의 주유 기록 수와 가장 최근 주유 날짜, 화면에서 고른 유종·주유 금액·출발 위치 이름도 함께 보내요. 리포트나 주유소 점검을 물으면 그에 필요한 주유 기록도 보내요. 위치 좌표는 보내지 않아요.",
+    what: "챗봇 질문과 대화, 보낸 사진, 그리고 내 정보 가운데 부를 이름·내 지역·위치 이름·내 차·주유 할인과 뺀 상표. 질문마다 이 브라우저의 주유 기록 수와 가장 최근 주유 날짜, 화면에서 고른 유종·주유 금액·출발 위치 이름도 함께 보내요. 리포트나 주유소 점검을 물으면 그에 필요한 주유 기록도 보내요. 위치 좌표는 보내지 않아요.",
     why: "AI 답변 만들기(질문할 때마다 인터넷으로 보냄)",
     link: { href: "https://www.anthropic.com/legal/privacy", label: "Anthropic 개인정보 처리방침" },
   },
   {
     to: "Vercel(미국)",
-    what: "이 서비스로 오가는 모든 요청과 접속 정보(근처 주유소를 찾을 때는 줄인 위치 좌표와 위치 이름이 요청 주소에 들어가요)",
+    what: "이 서비스로 오가는 모든 요청과 접속 정보(근처 주유소나 출퇴근 길을 찾을 때는 줄인 위치 좌표와 위치 이름이 요청 주소에 들어가요. 집·회사도 같아요)",
     why: "서비스 호스팅(서버 실행과 접속 기록)",
     link: { href: "https://vercel.com/legal/privacy-policy", label: "Vercel 개인정보 처리방침" },
   },
@@ -106,7 +106,8 @@ export default function PrivacyPage() {
         </p>
         <p className="text-sm text-ink-soft">
           저장 이름: kireumalimi.profile(내 정보·위치), kireumalimi.ledger와 kireumalimi.fills(주유 기록),
-          kireumalimi.alerts와 kireumalimi.watch(알림 조건·예보 설정), kireumalimi.vsArea(지난 달 지역 평균과 견준 결과)
+          kireumalimi.alerts와 kireumalimi.watch(알림 조건·예보 설정), kireumalimi.vsArea(지역 평균과 견준 결과),
+          kireumalimi.areaPrice(오늘의 내 지역 평균가)
         </p>
         <p>
           서버는 호출 한도를 지키려고 IP 주소별 요청 시각을 서버 메모리에 둬요. 하루가 지난 시각은 세지 않고, 쌓인 기록이
