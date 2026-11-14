@@ -101,7 +101,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="shell-width mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">{children}</main>
         <footer className="shell-footer px-4 pt-6 pb-28 text-center text-xs text-ink-soft lg:pb-5">
-          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이
+          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이 ·{" "}
+          <Link href="/privacy" className="underline underline-offset-4">
+            개인정보 처리방침
+          </Link>
         </footer>
         <LocationPicker />
 

@@ -1169,7 +1169,12 @@ export default function ChatPanel({
           </button>
         </form>
         {!isPanel && (
-          <p className="text-center text-[11px] text-ink-soft">유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이</p>
+          <p className="text-center text-[11px] text-ink-soft">
+            유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이 ·{" "}
+            <Link href="/privacy" className="underline underline-offset-4">
+              개인정보 처리방침
+            </Link>
+          </p>
         )}
       </div>
     </section>

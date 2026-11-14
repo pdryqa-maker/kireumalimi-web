@@ -27,7 +27,7 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 
 ## Operating Context
 
-- Demo region: 울산 울주군 (울산 is the 석유공사 headquarters city). Since 2026-11-13 the chatbot and alerts work for any 시도·시군구 nationwide; the demo still starts in 울주군.
+- Demo region: 울산 울주군 (울산 is the 석유공사 headquarters city). Since 2026-11-13 the chatbot and alerts work for any 시도·시군구 nationwide. Since 2026-11-14 nobody starts in 울주군: until a visitor picks a place (위치 고르기, no login needed), screens show 전국 only and ask for a place; the fixed question '지난 고시 뒤 우리 동네는?' stays the 울주군 example.
 - Demo is recorded on video; the site is also publicly deployed at https://kireumalimi-web.vercel.app with call limits. Deadline 2026-11-20.
 - Team 유일무이(油一無二) of four, working in one repository: github.com/pdryqa-maker/kireumalimi-web.
 
