@@ -8,7 +8,7 @@ import type { FuelReport } from "@/lib/fuelReport";
 import { amountName, amountQuery, fullLiters, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
-import { favoriteStation, fillPlan, monthProjection } from "@/lib/personal";
+import { favoriteStation, fillPlan, monthProjection, planLiters } from "@/lib/personal";
 import { DEFAULT_PLACE } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
 import { fuelName, saveProfile, signedIn, type Profile } from "@/lib/profile";
@@ -212,9 +212,9 @@ function greeting(hour: number) {
 function nextNotice(profile: Profile) {
   const watch = parseWatch(watchStore.read());
   const { today } = kstClock();
-  // 보낼 날만 쓰므로 오피넷 값(평균가·리터 환산)은 셈하지 않는다. 한 달 주행거리 예보는 가득일 때만 리터를 안다.
+  // 보낼 날만 쓰므로 오피넷 값(평균가·리터 환산)은 셈하지 않는다. 금액으로 넣으면 최고가격으로 리터를 어림한다.
   const entries = mergeLedger(parseLedger(ledgerStore.read()), parseFills(fillStore.read()));
-  const fillLiters = profile.amount === "full" ? fullLiters(entries, profile.fullLiters).liters : null;
+  const fillLiters = planLiters(profile.amount, profile.amount === "full" ? fullLiters(entries, profile.fullLiters) : null, profile.fuel);
   const plan = fillPlan({ entries, monthlyKm: profile.monthlyKm, kmpl: fuelEconomy(profile).kmpl, fillLiters, today });
   const personal: Personal = {
     plan,
