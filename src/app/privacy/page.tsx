@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 // 팀이 정해 주는 값. 바꾸면 이 페이지만 고치면 된다.
 const OPERATOR = "팀 유일무이";
-const CONTACT = "[문의 이메일 — 병합 전에 채움]";
+const CONTACT = "yuilmuyi@gmail.com";
 const EFFECTIVE = "2026년 11월 14일";
 
 // 처리하는 정보. 내용은 코드에서 확인한 사실만 적는다(저장: src/lib/*Store, 보내는 곳: src/lib/chatbot.ts, opinet.ts, expressway.ts).
@@ -160,7 +160,10 @@ export default function PrivacyPage() {
         <p>
           운영: {OPERATOR}
           <br />
-          문의: {CONTACT}
+          문의:{" "}
+          <a href={`mailto:${CONTACT}`} className="underline underline-offset-4">
+            {CONTACT}
+          </a>
         </p>
       </Section>
 
