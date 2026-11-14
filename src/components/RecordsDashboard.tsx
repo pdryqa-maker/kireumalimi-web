@@ -303,7 +303,7 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
             {forecast ? (
               <>
                 <p className="mt-2 text-2xl font-bold tracking-tight">{dayWithWeekday(forecast.nextDate)}</p>
-                <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                <p className="mt-1 mb-4 text-xs leading-relaxed text-ink-soft">
                   {forecast.due ? "지금 넣을 때예요. " : ""}평균 {forecast.avgGapDays}일 간격 · 최근 {forecast.records.length}번 기준
                 </p>
                 <button
@@ -312,7 +312,7 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
                   onClick={() => forecast && run({ kind: "forecast", forecast })}
                   className={`${BUTTON} mt-auto self-start`}
                 >
-                  이날 넣을 곳
+                  다음 주유일에 넣을 주유소 찾기
                 </button>
               </>
             ) : (
