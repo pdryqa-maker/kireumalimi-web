@@ -1,6 +1,6 @@
 // 지역 목록과 현재 위치 찾기. 내 정보, 내 알림 조건, 위치 고르기 창이 함께 쓴다.
 import { inKorea, toKatec } from "@/lib/katec";
-import type { MyArea, MyPlace } from "@/lib/profile";
+import type { MyArea, MyPlace, Profile } from "@/lib/profile";
 
 export type Area = { code: string; name: string };
 
@@ -42,4 +42,11 @@ export async function findMyPlace(): Promise<{ location: MyPlace; area: MyArea |
   const response = await fetch(`/api/areas/locate?x=${location.x}&y=${location.y}`).catch(() => null);
   const body = await response?.json().catch(() => null);
   return { location, area: response?.ok && body?.area ? body.area : null };
+}
+
+// 찾은 위치를 프로필에 더할 값. 붙여 둔 위치 이름(집, 회사)은 그대로 두고,
+// 시군구를 못 찾았으면 저장해 둔 내 지역을 지우지 않는다(내 정보 화면과 같다).
+export function locatedPatch(current: Profile, found: { location: MyPlace; area: MyArea | null }): Partial<Profile> {
+  const location = { ...found.location, label: current.location?.label ?? found.location.label };
+  return found.area ? { location, area: found.area } : { location };
 }

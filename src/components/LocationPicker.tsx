@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { parseProfile, profileStore, saveProfile, type Profile } from "@/lib/profile";
-import { findMyPlace, loadAreas, type Area } from "./areaApi";
+import { findMyPlace, loadAreas, locatedPatch, type Area } from "./areaApi";
 import { LocateIcon } from "./icons";
 import { useProfile } from "./useStored";
 
@@ -41,6 +41,7 @@ export function LocationPicker() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const pickedRef = useRef<PickDetail["onPicked"]>(undefined);
   const lookupRef = useRef(0); // 현재 위치 찾기가 늦게 끝나 그 뒤 고른 값을 덮지 않도록 순번을 센다
+  const sidoRef = useRef(""); // 시군구 목록이 늦게 와도 마지막으로 고른 시도의 목록만 보이게 한다
   const [locating, setLocating] = useState(false);
   const [note, setNote] = useState("");
   const [sidos, setSidos] = useState<Area[]>([]);
@@ -49,12 +50,14 @@ export function LocationPicker() {
   const [sigun, setSigun] = useState("");
 
   async function showSiguns(code: string) {
+    sidoRef.current = code;
     setSiguns([]);
     if (!code) return;
     try {
-      setSiguns(await sigunsOf(code));
+      const list = await sigunsOf(code);
+      if (sidoRef.current === code) setSiguns(list);
     } catch (problem) {
-      setNote(problem instanceof Error ? problem.message : "시군구 목록을 불러오지 못했어요.");
+      if (sidoRef.current === code) setNote(problem instanceof Error ? problem.message : "시군구 목록을 불러오지 못했어요.");
     }
   }
 
@@ -68,12 +71,15 @@ export function LocationPicker() {
       const area = readProfile().area;
       const current = area?.code.slice(0, 2) ?? "";
       setSido(current);
+      sidoRef.current = current;
       setSigun(area?.code.length === 4 ? area.code : "");
       setSiguns([]);
       dialogRef.current?.showModal();
       try {
         setSidos(await sidosOnce());
-        if (current) setSiguns(await sigunsOf(current));
+        if (!current) return;
+        const list = await sigunsOf(current);
+        if (sidoRef.current === current) setSiguns(list); // 그사이 다른 시도를 골랐으면 버린다
       } catch (problem) {
         setNote(problem instanceof Error ? problem.message : "지역 목록을 불러오지 못했어요.");
       }
@@ -82,12 +88,17 @@ export function LocationPicker() {
     return () => window.removeEventListener(PICK_EVENT, open);
   }, []);
 
-  function save(next: Partial<Profile>) {
+  // 저장하면 창을 닫는다. stayOpenNote를 주면 저장한 뒤에도 창을 열어 두고 그 말을 보여 준다.
+  function save(next: Partial<Profile>, stayOpenNote = "") {
+    // 진행 중인 위치 찾기는 버린다. 창의 close 이벤트는 나중에 오므로 여기서 바로 센다.
+    lookupRef.current++;
+    setLocating(false);
     if (!saveProfile({ ...readProfile(), ...next })) {
       setNote("이 브라우저에 저장하지 못했어요. 개인 정보 보호 모드인지 확인해 주세요.");
       return;
     }
-    dialogRef.current?.close();
+    if (stayOpenNote) setNote(stayOpenNote);
+    else dialogRef.current?.close();
     pickedRef.current?.(readProfile());
   }
 
@@ -102,8 +113,12 @@ export function LocationPicker() {
       setNote(found.error);
       return;
     }
-    // 붙여 둔 위치 이름(집, 회사)은 그대로 둔다.
-    save({ location: { ...found.location, label: readProfile().location?.label ?? found.location.label }, area: found.area });
+    const current = readProfile();
+    // 시군구를 못 찾았고 저장해 둔 지역도 없으면, 위치만 저장했다고 알리고 창을 열어 둔다.
+    save(
+      locatedPatch(current, found),
+      found.area || current.area ? "" : "현재 위치를 저장했어요. 근처 주유소는 이 위치로 찾아요. 다만 시군구는 정하지 못해 지역 평균은 보여 드리지 못해요.",
+    );
   }
 
   function chooseSido(code: string) {
@@ -112,6 +127,12 @@ export function LocationPicker() {
     setSido(code);
     setSigun("");
     showSiguns(code);
+  }
+
+  function chooseSigun(code: string) {
+    lookupRef.current++;
+    setLocating(false);
+    setSigun(code);
   }
 
   // 직접 고른 지역은 찾아 둔 현재 위치를 대신한다(내 정보 화면과 같다).
@@ -188,7 +209,7 @@ export function LocationPicker() {
             aria-label="시군구"
             disabled={siguns.length === 0}
             value={sigun}
-            onChange={(event) => setSigun(event.target.value)}
+            onChange={(event) => chooseSigun(event.target.value)}
             className={FIELD}
           >
             <option value="">시도 전체</option>

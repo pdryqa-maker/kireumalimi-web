@@ -48,13 +48,13 @@ const ITEMS = [
 const SENDS = [
   {
     to: "Anthropic(미국)",
-    what: "챗봇 질문과 대화, 보낸 사진, 그리고 내 정보 가운데 부를 이름·내 지역·위치 이름·내 차. 리포트나 주유소 점검을 물으면 그에 필요한 주유 기록도 함께 보내요. 위치 좌표는 보내지 않아요.",
+    what: "챗봇 질문과 대화, 보낸 사진, 그리고 내 정보 가운데 부를 이름·내 지역·위치 이름·내 차. 질문마다 이 브라우저의 주유 기록 수와 가장 최근 주유 날짜, 화면에서 고른 유종·주유 금액·출발 위치 이름도 함께 보내요. 리포트나 주유소 점검을 물으면 그에 필요한 주유 기록도 보내요. 위치 좌표는 보내지 않아요.",
     why: "AI 답변 만들기(질문할 때마다 인터넷으로 보냄)",
     link: { href: "https://www.anthropic.com/legal/privacy", label: "Anthropic 개인정보 처리방침" },
   },
   {
     to: "Vercel(미국)",
-    what: "이 서비스로 오가는 모든 요청과 접속 정보(근처 주유소를 찾을 때는 줄인 위치 좌표가 요청 주소에 들어가요)",
+    what: "이 서비스로 오가는 모든 요청과 접속 정보(근처 주유소를 찾을 때는 줄인 위치 좌표와 위치 이름이 요청 주소에 들어가요)",
     why: "서비스 호스팅(서버 실행과 접속 기록)",
     link: { href: "https://vercel.com/legal/privacy-policy", label: "Vercel 개인정보 처리방침" },
   },
@@ -104,9 +104,15 @@ export default function PrivacyPage() {
           부를 이름, 내 차, 위치, 주유 기록, 알림 조건은 이 브라우저의 저장소(localStorage)에만 있어요. 서버에는 이 정보를
           저장하는 데이터베이스가 없어요. 직접 지우거나 브라우저의 사이트 데이터를 지울 때까지 남아요.
         </p>
+        <p className="text-sm text-ink-soft">
+          저장 이름: kireumalimi.profile(내 정보·위치), kireumalimi.ledger와 kireumalimi.fills(주유 기록),
+          kireumalimi.alerts와 kireumalimi.watch(알림 조건·예보 설정), kireumalimi.vsArea(지난 달 지역 평균과 견준 결과)
+        </p>
         <p>
-          서버는 호출 한도를 지키려고 IP 주소별 요청 시각을 서버 메모리에만 잠시 둬요. 하루가 지난 시각은 쓰지 않고, 서버가
-          다시 시작되면 모두 사라져요. 챗봇 질문과 사진은 답을 만든 뒤 서버에 남기지 않아요. 다만 호스팅 회사(Vercel)가 접속 기록을 정해진 기간 동안 보관할 수 있어요.
+          서버는 호출 한도를 지키려고 IP 주소별 요청 시각을 서버 메모리에 둬요. 하루가 지난 시각은 세지 않고, 쌓인 기록이
+          많아지면 하루 지난 것을 지우며, 서버가 다시 시작되면 모두 사라져요. 오피넷·도로공사 조회 결과도 같은 조회를 다시
+          부르지 않으려고 조회 조건(줄인 위치 좌표 포함)과 함께 서버 메모리에 10분에서 1시간 동안 둬요. 챗봇 질문과 사진은
+          답을 만든 뒤 서버에 남기지 않아요. 다만 호스팅 회사(Vercel)가 접속 기록을 정해진 기간 동안 보관할 수 있어요.
         </p>
       </Section>
 
@@ -135,7 +141,10 @@ export default function PrivacyPage() {
 
       <Section title="지우는 방법">
         <ul className="list-disc space-y-1.5 pl-5">
-          <li>위치: 출발 위치의 &lsquo;위치 고르기&rsquo; 창에서 &lsquo;고른 위치 지우기&rsquo;</li>
+          <li>
+            위치: 출발 위치 메뉴의 &lsquo;위치 고르기&rsquo;(이미 골랐으면 메뉴 끝 &lsquo;다른 지역 고르기…&rsquo;)로 여는 창에서
+            &lsquo;고른 위치 지우기&rsquo;
+          </li>
           <li>
             부를 이름, 내 차, 위치: <Link href="/login" className="underline underline-offset-4">내 정보</Link>에서 로그아웃
           </li>
