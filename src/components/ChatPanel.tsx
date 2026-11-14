@@ -47,6 +47,7 @@ import { forecastMessage } from "./stationText";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 import { CameraIcon, ChartIcon, PinIcon, PumpIcon, ReceiptIcon } from "./icons";
+import { StationMiniMap, type MiniMapData } from "./StationMiniMap";
 import { fetchFill, useFullLiters } from "./useFill";
 import { shrinkPhoto, type Photo } from "./photo";
 import { useMounted, useProfile, useStored } from "./useStored";
@@ -99,11 +100,11 @@ type Check = { verified: number; blocked: boolean };
 type SkeletonKind = "list" | "detail" | "text";
 // 카드 답변에는 summary를 붙인다. 자유 질문을 보낼 때 대화 기록에 이 요약이 들어가, AI가 이미 답한 질문을 다시 답하지 않는다.
 type Reply =
-  | { from: "bot"; text: string; check?: Check }
+  | { from: "bot"; text: string; check?: Check; map?: MiniMapData }
   | { from: "bot"; summary: string; notice: { text: string; figures: NoticeFigures } }
-  | { from: "bot"; summary: string; title: string; fetchedAt: string; stations: Station[]; excludedCount?: number }
-  | { from: "bot"; summary: string; detail: StationDetail }
-  | { from: "bot"; summary: string; cost: CostResult }
+  | { from: "bot"; summary: string; title: string; fetchedAt: string; stations: Station[]; excludedCount?: number; map?: MiniMapData }
+  | { from: "bot"; summary: string; detail: StationDetail; map?: MiniMapData }
+  | { from: "bot"; summary: string; cost: CostResult; map?: MiniMapData }
   | { from: "bot"; summary: string; commute: CommuteResult }
   | { from: "bot"; summary: string; tax: TaxImpact; taxCost: CostResult | null }
   | { from: "bot"; summary: string; alert: AlertProposal; status: AlertStatus; id: number }
@@ -447,6 +448,12 @@ export default function ChatPanel({
   }, [messages, pending, isPanel]);
 
   const busy = pending !== null;
+  // 지도가 붙은 답 중 마지막 것만 바로 지도를 그린다(앞의 답은 '지도로 보기' 단추). 지도가 쌓이면 휴대폰이 느려진다.
+  const lastMapIndex = messages.findLastIndex((message) => ((message as { map?: MiniMapData }).map?.points.length ?? 0) > 0);
+  const pickStation = (points: MiniMapData["points"]) => (id: string) => {
+    const point = points.find((item) => item.id === id);
+    if (point && !busy) askDetail(point);
+  };
   const hasMessages = messages.length > 0;
   useEffect(() => {
     onActivity?.({ busy, hasMessages });
@@ -521,6 +528,7 @@ export default function ChatPanel({
         fetchedAt: body.fetchedAt,
         stations: body.stations,
         excludedCount: body.excludedCount,
+        map: body.map ?? undefined,
         summary: `${title}(${koreanTime(body.fetchedAt)} 조회): ${listSummary(body.stations)}.${excludedText(body.excludedCount)}`,
       };
     });
@@ -533,7 +541,7 @@ export default function ChatPanel({
       const prices = (body as StationDetail).prices
         .map((price) => `${price.fuel} ${won(price.price)}원(${basis(price.updatedAt)})`)
         .join(", ");
-      return { from: "bot", detail: body, summary: `${body.name} 상세: ${prices}` };
+      return { from: "bot", detail: body, map: body.map ?? undefined, summary: `${body.name} 상세: ${prices}` };
     });
 
   const askTotalCost = () => {
@@ -560,7 +568,7 @@ export default function ChatPanel({
             `${body.place} 반경 ${body.radiusKm}km 안에서 ${chosenFuel} 가격을 알린 주유소가 없어요.`,
         };
       }
-      return { from: "bot", cost: body, summary: costSummary(body) };
+      return { from: "bot", cost: body, map: body.map ?? undefined, summary: costSummary(body) };
     });
   };
 
@@ -731,7 +739,7 @@ export default function ChatPanel({
         }),
       });
       if (!ok || !body?.text) return body?.error ? { from: "bot", text: body.error } : null;
-      const replies: Reply[] = [{ from: "bot", text: body.text, check: body.check ?? undefined }];
+      const replies: Reply[] = [{ from: "bot", text: body.text, check: body.check ?? undefined, map: body.map ?? undefined }];
       if (body.alert) {
         replies.push({
           from: "bot",
@@ -1043,7 +1051,24 @@ export default function ChatPanel({
             return <TaxCard key={index} tax={message.tax} cost={message.taxCost} />;
           }
           if ("cost" in message) {
-            return <CostCard key={index} cost={message.cost} busy={busy} onDetail={(station: CostStation) => askDetail(station)} />;
+            return (
+              <CostCard
+                key={index}
+                cost={message.cost}
+                busy={busy}
+                onDetail={(station: CostStation) => askDetail(station)}
+                map={
+                  message.map && (
+                    <StationMiniMap
+                      data={message.map}
+                      title={`${message.cost.place} 출발 · 거리까지 고려한 추천`}
+                      live={index === lastMapIndex}
+                      onPick={pickStation(message.map.points)}
+                    />
+                  )
+                }
+              />
+            );
           }
           if ("commute" in message) {
             return <CommuteCard key={index} commute={message.commute} />;
@@ -1094,6 +1119,9 @@ export default function ChatPanel({
           if ("stations" in message) {
             return (
               <div key={index} className="max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised">
+                {message.map && (
+                  <StationMiniMap data={message.map} title={message.title} live={index === lastMapIndex} onPick={pickStation(message.map.points)} />
+                )}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold text-ink-soft">{message.title}</h2>
                   <span className="rounded-full px-2.5 py-1 text-xs font-medium text-ink-soft tabular-nums shadow-inset-sm">
@@ -1176,6 +1204,7 @@ export default function ChatPanel({
             const { detail } = message;
             return (
               <div key={index} className="max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised">
+                {message.map && <StationMiniMap data={message.map} title={detail.name} live={index === lastMapIndex} />}
                 <h2 className="font-semibold">
                   {detail.name} <span className="text-sm font-normal text-ink-soft">{detail.brand}</span>
                 </h2>
@@ -1216,10 +1245,15 @@ export default function ChatPanel({
             );
           }
           return (
-            <div key={index} className="w-fit max-w-[34rem] animate-rise">
+            <div key={index} className={`${message.map ? "w-full" : "w-fit"} max-w-[34rem] animate-rise`}>
               <p className="whitespace-pre-line rounded-3xl rounded-bl-md p-4 text-[15px] leading-relaxed shadow-raised">
                 {message.text}
               </p>
+              {message.map && (
+                <div className="mt-2.5">
+                  <StationMiniMap data={message.map} title="답에 나온 주유소" live={index === lastMapIndex} onPick={pickStation(message.map.points)} />
+                </div>
+              )}
               {message.check && message.check.verified > 0 && (
                 <p className="mt-2.5 w-fit rounded-full px-2.5 py-1 text-xs font-medium text-ink-soft tabular-nums shadow-inset-sm">
                   숫자 {message.check.verified}개 · 조회 결과와 대조해 일치

@@ -22,10 +22,12 @@ import {
   findNearby,
   findUrea,
   getStation,
+  mapPointsOf,
   resolveArea,
   searchStations,
   stationStanding,
   stationTrust,
+  type MapPoint,
   type Origin,
 } from "@/lib/stations";
 
@@ -534,6 +536,8 @@ export type ChatAnswer = {
   alert: AlertProposal | null;
   fill: FillProposal | null;
   dashboard: DashboardProposal | null;
+  // 답에 쓴 조회 결과에 주유소가 있으면 지도에 찍을 점(마지막 조회 기준). 위치와 상관없는 답이면 null.
+  map: { origin: null; points: MapPoint[] } | null;
 };
 
 type Proposals = { alerts: AlertProposal[]; fills: FillProposal[]; dashboards: DashboardProposal[] };
@@ -756,6 +760,7 @@ export async function answer(
   const allowed = collectAllowed([today, facts, ...history.map((turn) => turn.content)]);
   const proposals: Proposals = { alerts: [], fills: [], dashboards: [] };
   let retried = false;
+  let mapPoints: MapPoint[] = [];
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const response = await client.beta.messages.create({
@@ -770,7 +775,7 @@ export async function answer(
     });
 
     if (response.stop_reason === "refusal") {
-      return { text: "이 질문에는 답하기 어려워요. 주유소 가격이나 연료 제도를 물어봐 주세요.", check: null, alert: null, fill: null, dashboard: null };
+      return { text: "이 질문에는 답하기 어려워요. 주유소 가격이나 연료 제도를 물어봐 주세요.", check: null, alert: null, fill: null, dashboard: null, map: null };
     }
 
     // 도구 사용 중 생긴 thinking 블록까지 그대로 다시 보내야 하므로 content 전체를 붙인다.
@@ -796,11 +801,11 @@ export async function answer(
       const dashboard = proposals.dashboards.at(-1) ?? null;
       const { unknown, verified } = checkNumbers(text, allowed);
       if (unknown.length === 0) {
-        return { text, check: { verified, blocked: false }, alert, fill, dashboard };
+        return { text, check: { verified, blocked: false }, alert, fill, dashboard, map: mapPoints.length ? { origin: null, points: mapPoints } : null };
       }
       console.warn("숫자 대조 실패", { unknown, retried });
       if (retried) {
-        return { text: BLOCKED_TEXT, check: { verified: 0, blocked: true }, alert, fill, dashboard };
+        return { text: BLOCKED_TEXT, check: { verified: 0, blocked: true }, alert, fill, dashboard, map: null };
       }
       retried = true;
       messages.push({
@@ -815,6 +820,9 @@ export async function answer(
       try {
         const result = await runTool(toolUse.name, toolUse.input as Record<string, unknown>, { proposals, profile, today, ledger });
         collectAllowed([result], allowed);
+        // 주유소가 나온 조회면 그 주유소들을 답 아래 지도에 보인다. 좌표는 서버에만 두고 AI에는 보내지 않는다.
+        const points = mapPointsOf(result);
+        if (points.length > 0) mapPoints = points;
         results.push({ type: "tool_result", tool_use_id: toolUse.id, content: JSON.stringify(result) });
       } catch (error) {
         const message = error instanceof Error ? error.message : "조회에 실패했습니다.";
@@ -826,5 +834,5 @@ export async function answer(
     messages.push({ role: "user", content: results });
   }
 
-  return { text: "조회가 길어져 답을 마치지 못했어요. 질문을 조금 더 짧게 해 주세요.", check: null, alert: null, fill: null, dashboard: null };
+  return { text: "조회가 길어져 답을 마치지 못했어요. 질문을 조금 더 짧게 해 주세요.", check: null, alert: null, fill: null, dashboard: null, map: null };
 }

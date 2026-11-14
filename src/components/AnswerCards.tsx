@@ -60,14 +60,17 @@ export function CostCard({
   cost,
   onDetail,
   busy,
+  map,
 }: {
   cost: CostResult;
   onDetail: (station: CostStation) => void;
   busy: boolean;
+  map?: React.ReactNode; // 카드 맨 위 작은 지도(챗봇이 넘겨줌)
 }) {
   const { cheapest } = cost;
   return (
     <div className={CARD}>
+      {map}
       <CardHead title={`${cost.place} 출발 · ${cost.fuel} ${cost.fill.label} 실질비용`} fetchedAt={cost.fetchedAt} />
       <p className="mt-1 text-xs text-ink-soft">
         기름값에 오가는 연료비(연비 {cost.kmpl}km/L, 직선 왕복)를 더한 총비용 순 · 반경 {cost.radiusKm}km

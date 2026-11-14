@@ -49,7 +49,54 @@ type Row = Record<string, string | number | undefined>;
 
 export function rows(body: unknown): Row[] {
   const oil = (body as { RESULT?: { OIL?: Row[] } })?.RESULT?.OIL;
-  return Array.isArray(oil) ? oil : [];
+  const list = Array.isArray(oil) ? oil : [];
+  for (const row of list) rememberCoords(row);
+  return list;
+}
+
+// 주유소 좌표 기억: 오피넷 응답(최저가·반경·상세·상호 검색)에 좌표가 오면 위경도로 바꿔 둔다.
+// 조회 결과의 모양은 그대로 두고, 지도가 필요할 때 주유소 ID로 찾아 붙인다(withCoords). 주유소 위치는 거의 바뀌지 않는다.
+const COORDS = new Map<string, { lat: number; lon: number }>();
+
+function rememberCoords(row: Row) {
+  const id = String(row.UNI_ID ?? "");
+  const x = Number(row.GIS_X_COOR);
+  const y = Number(row.GIS_Y_COOR);
+  if (id && !COORDS.has(id) && isKatec(x, y)) COORDS.set(id, fromKatec(x, y));
+}
+
+export const coordsOf = (id: string) => COORDS.get(id) ?? null;
+
+// 목록의 주유소에 위경도를 붙인다. 좌표를 모르는 곳은 그대로 둔다(지도에서만 빠진다).
+export function withCoords<T extends { id: string }>(list: T[]) {
+  return list.map((station) => ({ ...station, ...(COORDS.get(station.id) ?? {}) }));
+}
+
+// 챗봇 답에 붙일 지도 점: 조회 결과에서 주유소(ID와 이름이 있는 항목)를 모아 좌표를 붙인다.
+// 결과 자체가 주유소이거나, 바로 아래 칸에 주유소 하나 또는 주유소 목록이 있는 모양을 읽는다. 좌표를 모르면 뺀다.
+export type MapPoint = { id: string; name: string; brand: string; price: number | null; lat: number; lon: number };
+const MAX_MAP_POINTS = 10;
+
+export function mapPointsOf(result: unknown): MapPoint[] {
+  const isStation = (item: unknown): item is Record<string, unknown> =>
+    typeof item === "object" && item !== null && typeof (item as { id?: unknown }).id === "string" && typeof (item as { name?: unknown }).name === "string";
+  const found: Record<string, unknown>[] = [];
+  if (isStation(result)) found.push(result);
+  if (typeof result === "object" && result !== null) {
+    for (const value of Object.values(result)) {
+      if (isStation(value)) found.push(value);
+      else if (Array.isArray(value)) found.push(...value.filter(isStation));
+    }
+  }
+  const points = new Map<string, MapPoint>();
+  for (const item of found) {
+    const id = String(item.id);
+    const at = COORDS.get(id);
+    if (!at || points.has(id)) continue;
+    const price = Number(item.paidPrice ?? item.price);
+    points.set(id, { id, name: String(item.name), brand: String(item.brand ?? ""), price: price > 0 ? price : null, ...at });
+  }
+  return [...points.values()].slice(0, MAX_MAP_POINTS);
 }
 
 function brandName(code: unknown) {
@@ -347,6 +394,12 @@ export type Origin = string | { name: string; x: number; y: number };
 export function resolveOrigin(origin: Origin) {
   if (typeof origin === "string") return placeAt(origin);
   return origin.name && isKatec(origin.x, origin.y) ? origin : null;
+}
+
+// 지도에 찍을 출발 위치(이름과 위경도). 위치를 모르면 null.
+export function originPoint(origin: Origin) {
+  const place = resolveOrigin(origin);
+  return place ? { name: place.name, ...fromKatec(place.x, place.y) } : null;
 }
 
 function aroundRows(body: unknown) {

@@ -10,13 +10,12 @@ import { prefsQuery } from "@/lib/discounts";
 import { DEFAULT_PLACE, initialPlace, MY, NO_PLACE, usablePlace } from "@/lib/places";
 import { fuelName, prefsOf } from "@/lib/profile";
 import { ConditionBar } from "./ConditionBar";
+import { loadMapLib, markerElement, originElement, PILL, STYLE_URL, tidyBaseMap } from "./mapBase";
 import { openLocationPicker } from "./LocationPicker";
 import { basis, PUMP_NOTE, won } from "./format";
 import { useFullLiters } from "./useFill";
 import { useProfile } from "./useStored";
 
-const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
-const WORKER_URL = "/maplibre/maplibre-gl-worker.mjs";
 const RADIUS_KM = 5;
 
 type MapStation = {
@@ -58,22 +57,6 @@ function radiusRing(lat: number, lon: number, km: number) {
     return [lon + dLon, lat + dLat];
   });
   return { type: "Feature" as const, properties: {}, geometry: { type: "Polygon" as const, coordinates: [points] } };
-}
-
-const PILL = "flex items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums whitespace-nowrap transition-transform";
-
-// 표시 하나: 바깥 칸(root)은 MapLibre가 transform으로 위치를 옮기고, 안쪽 버튼에만 모양과 확대 효과를 준다.
-// 바깥 칸에 transition이 붙으면 지도를 움직일 때 위치 이동까지 늦게 따라와 숫자가 미끄러진다.
-function markerElement(onClick: () => void) {
-  const root = document.createElement("div");
-  const button = document.createElement("button");
-  button.type = "button";
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    onClick();
-  });
-  root.appendChild(button);
-  return { root, button };
 }
 
 // 내용이 바뀔 때만 다시 쓴다(그릴 때마다 innerHTML을 바꾸면 깜빡인다).
@@ -133,12 +116,10 @@ export default function StationMap() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const lib = await import("maplibre-gl");
-      const { Map, NavigationControl, setWorkerUrl } = lib;
+      const lib = await loadMapLib();
+      const { Map, NavigationControl } = lib;
       if (cancelled || !containerRef.current) return;
       libRef.current = lib;
-      // 워커 파일은 설치 때 public/maplibre/로 복사해 둔다(scripts/copy-maplibre-worker.mjs).
-      setWorkerUrl(WORKER_URL);
       const map = new Map({
         container: containerRef.current,
         style: STYLE_URL,
@@ -151,17 +132,7 @@ export default function StationMap() {
       map.touchZoomRotate.disableRotation();
       map.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
       map.on("load", () => {
-        // 지명은 한국어 이름을 먼저 쓴다(없으면 원래 이름). 도로 번호 표지(ref) 층은 숨긴다.
-        // 표지 층은 네모 그림 위에 도로 번호를 쓰는데, 국내 도로는 번호가 비어 있는 곳이 많아 빈 네모만 남는다.
-        for (const layer of map.getStyle().layers ?? []) {
-          if (layer.type !== "symbol") continue;
-          const field = JSON.stringify(map.getLayoutProperty(layer.id, "text-field") ?? "");
-          if (field.includes("ref")) {
-            map.setLayoutProperty(layer.id, "visibility", "none");
-          } else if (field.includes("name")) {
-            map.setLayoutProperty(layer.id, "text-field", ["coalesce", ["get", "name:ko"], ["get", "name"]]);
-          }
-        }
+        tidyBaseMap(map);
         map.addSource("radius", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
         map.addLayer({ id: "radius-fill", type: "fill", source: "radius", paint: { "fill-color": "#15171c", "fill-opacity": 0.035 } });
         map.addLayer({
@@ -184,8 +155,6 @@ export default function StationMap() {
         // 보이지 않는 점 층: 묶음과 낱개를 읽어 HTML 표시를 그리기 위해 둔다.
         map.addLayer({ id: "stations-hit", type: "circle", source: "stations", paint: { "circle-radius": 1, "circle-opacity": 0 } });
         map.on("click", () => selectRef.current(null));
-        // 출처 표시는 처음부터 펼쳐져 가격 표시를 가리므로 'i' 단추로 접어 둔다(누르면 다시 보인다).
-        map.getContainer().querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
         // 화면이 다시 붙으며 지도가 새로 만들어졌다면 옛 지도의 준비 완료는 무시한다.
         if (mapRef.current === map) setMapReady(true);
       });
@@ -257,12 +226,7 @@ export default function StationMap() {
       const { Marker, LngLatBounds } = await import("maplibre-gl");
       if (cancelled) return;
       originMarkerRef.current?.remove();
-      const pin = document.createElement("div");
-      pin.className = "grid place-items-center";
-      pin.setAttribute("aria-label", `출발 위치 ${data.place}`);
-      pin.innerHTML =
-        '<span class="block size-4 rounded-full border-[3px] border-white bg-flame shadow-raised"></span>';
-      originMarkerRef.current = new Marker({ element: pin }).setLngLat([data.origin.lon, data.origin.lat]).addTo(map);
+      originMarkerRef.current = new Marker({ element: originElement(data.place) }).setLngLat([data.origin.lon, data.origin.lat]).addTo(map);
 
       const bounds = new LngLatBounds([data.origin.lon, data.origin.lat], [data.origin.lon, data.origin.lat]);
       for (const station of data.stations) bounds.extend([station.lon, station.lat]);
