@@ -1,6 +1,6 @@
 "use client";
 
-// 내 기록 대시보드: 고른 달의 숫자 카드, 월별 쓴 돈 그래프, 다음 주유일, 주유 기록 표. 결과와 사진 읽기는 대시보드 안 패널에서 한다.
+// 내 기록 대시보드: 내 맞춤 요약, 고른 달의 숫자 카드, 월별 쓴 돈 그래프, 다음 주유일, 주유 기록 표. 결과와 사진 읽기는 대시보드 안 패널에서 한다.
 // 숫자는 이 브라우저의 장부로 셈한다. 오피넷은 "시도 평균보다" 한 줄만 그 달을 처음 볼 때 한 번 부르고 결과를 브라우저에 남긴다.
 import { useEffect, useRef, useState } from "react";
 import { forecastNextFill, todayKst, type FillForecast } from "@/lib/fillForecast";
@@ -18,13 +18,15 @@ import {
 import { fuelEconomy, type KmplSource } from "@/lib/fuelEconomy";
 import { MAX_SAVED_LEDGER, type LedgerEntry } from "@/lib/ledger";
 import { fillStore, parseFills } from "@/lib/savedFills";
-import { ledgerForMonth, ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
+import { ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
 import { parseVsArea, vsAreaStore, type VsArea } from "@/lib/savedVsArea";
 import ChatPanel, { type PanelCommand, type PanelHandle } from "./ChatPanel";
 import { DashboardPanel, usePanelState } from "./DashboardPanel";
 import { dayWithWeekday, won } from "./format";
 import { CameraIcon } from "./icons";
 import { monthName, MonthlyChart, PHONE_MONTHS, spendText } from "./MonthlyChart";
+import PersonalSummary from "./PersonalSummary";
+import { fetchVsArea } from "./personalChecks";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 type Region = { key: string; area: string; name: string };
@@ -118,29 +120,24 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
   const fingerprint = vsAreaKey(profile.fuel, profile.area?.code ?? "", entries, month);
   // 오래 남기지 않는 결과(이번 달, 일부만 견줌, 오피넷 장애)는 이 화면에서만 들고 있어 다시 그릴 때 또 부르지 않는다.
   const [shown, setShown] = useState<Record<string, VsArea>>({});
-  const cached = !fingerprint ? null : vsArea[month]?.fingerprint === fingerprint ? vsArea[month] : (shown[fingerprint] ?? null);
+  // 이번 달 결과(provisionalOn)는 받은 그날만 쓴다.
+  const stored = vsArea[month];
+  const storedOk = stored?.fingerprint === fingerprint && (!stored.provisionalOn || stored.provisionalOn === today);
+  const cached = !fingerprint ? null : storedOk ? stored : (shown[fingerprint] ?? null);
   const pricedFills = priced ? priced.split(",").length : 0;
   const [failed, setFailed] = useState<string | null>(null);
   const inflight = useRef(new Set<string>());
   useEffect(() => {
     if (!fingerprint || cached || failed === fingerprint || inflight.current.has(fingerprint)) return;
     inflight.current.add(fingerprint);
-    fetch("/api/fuel-report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ledger: ledgerForMonth(month), profile, month }),
-    })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
-      .then((body) => {
-        // vsArea가 null이면 이번에는 하나도 견주지 못한 것이다(평균이 없거나 오피넷을 못 불렀다).
-        const result = body?.vsArea;
-        if (result !== null && typeof result?.savedWon !== "number") throw new Error("vsArea 없음");
-        const entry: VsArea = result
-          ? { fingerprint, area: String(result.area ?? ""), savedWon: result.savedWon, comparedFills: Number(result.comparedFills) || 0 }
-          : { fingerprint, area: "", savedWon: 0, comparedFills: 0 };
+    fetchVsArea(month, profile, fingerprint)
+      .then((entry) => {
         setShown((current) => ({ ...current, [fingerprint]: entry }));
         if (vsAreaFinal(entry.comparedFills, pricedFills, month, today ?? "")) {
           vsAreaStore.write({ ...parseVsArea(vsAreaStore.read()), [month]: entry });
+        } else if (today && month === today.slice(0, 7) && pricedFills > 0 && entry.comparedFills === pricedFills) {
+          // 이번 달을 다 견줬으면 오늘 하루만 쓰도록 남긴다(올해 아낀 돈에 이번 달도 더한다).
+          vsAreaStore.write({ ...parseVsArea(vsAreaStore.read()), [month]: { ...entry, provisionalOn: today } });
         }
       })
       .catch(() => setFailed(fingerprint))
@@ -223,6 +220,10 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
           {photoButtons}
         </div>
 
+        {mounted && today && (
+          <PersonalSummary profile={profile} entries={entries} today={today} areaCode={profile.area?.code ?? region.area} vsArea={vsArea} />
+        )}
+
         <section aria-label={`${label} 숫자`} className="mt-5">
           <div className="grid grid-cols-2 gap-3 2xl:grid-cols-4">
             <Stat label={`${label} 쓴 돈`} value={dash ? "—" : `${won(current.won)}원`} lines={spentLines} />
@@ -302,7 +303,10 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
             ) : (
               <>
                 <p className="mt-2 text-[15px] leading-relaxed">
-                  {forecastProblem || "기록이 2번 이상 있어야 계산할 수 있어요."}
+                  {forecastProblem ||
+                    (profile.monthlyKm
+                      ? "위 요약의 다음 주유일은 한 달 주행거리로 셈했어요. 기록이 2번 쌓이면 넣을 주유소도 골라 드려요."
+                      : "기록이 2번 이상 있어야 계산할 수 있어요.")}
                 </p>
                 <button type="button" disabled={busy} onClick={() => run({ kind: "fillForm" })} className={`${BUTTON} mt-4 self-start`}>
                   기록 넣기

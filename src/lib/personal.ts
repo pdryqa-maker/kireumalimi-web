@@ -7,7 +7,7 @@ import { addDays, daysBetween, forecastNextFill, MIN_RECORDS, notifyDay } from "
 import { forecastRecords, previousMonth, totals, vsAreaKey } from "./fillTotals";
 import { measuredSpans } from "./fuelEconomy";
 import type { LedgerEntry } from "./ledger";
-import { FUEL_TAX_CUT, taxCutImpact } from "./policy";
+import { FUEL_TAX_CUT, PRICE_CAP, taxCutImpact } from "./policy";
 import type { VsArea } from "./savedVsArea";
 import { coreName } from "./stationName";
 
@@ -65,6 +65,15 @@ export function fillPlan({
   const lastDate = sortedByDate(entries).at(-1)?.date ?? null;
   const nextDate = addDays(lastDate ?? today, gapDays);
   return { basis: "monthlyKm", gapDays, lastDate, nextDate, notifyOn: notifyDay(nextDate, today), due: nextDate <= today, typicalWon: null };
+}
+
+// 다음 주유 계획에 쓰는 한 번 넣는 양(L). 금액을 리터로 바꾸지 못했으면(평균가 조회 실패) 석유 최고가격으로 어림한다.
+// 날짜만 셈하는 값이라 몇 리터 차이는 괜찮다. 최고가격이 없는 유종(LPG)은 모른다.
+export function planLiters(amount: Amount, fill: Pick<Fill, "liters"> | null, fuel: string): number | null {
+  if (fill) return fill.liters;
+  if (amount === "full") return null;
+  const capWon = PRICE_CAP.rounds.at(-1)!.prices[fuel];
+  return capWon ? Math.round(amount / capWon) : null;
 }
 
 // 내 지역 오늘 평균가(오피넷). 받지 못하면 null로 넘긴다.
