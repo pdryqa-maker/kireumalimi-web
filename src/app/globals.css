@@ -39,6 +39,15 @@
   --animate-groove: groove 1.4s ease-in-out infinite;
 }
 
+/* 화면 틀의 폭과 바닥글(AppShell). 대시보드는 넓게, 챗봇 화면은 바닥글 없이. */
+.app-shell:has([data-wide]) .shell-width {
+  max-width: var(--container-6xl);
+}
+
+.app-shell:has([data-chat]) .shell-footer {
+  display: none;
+}
+
 /* 답변은 표면에서 솟아오르고, 질문은 표면으로 눌려 들어간다. 둘 다 처음부터 보이는 상태에서 시작한다. */
 @keyframes rise {
   from {

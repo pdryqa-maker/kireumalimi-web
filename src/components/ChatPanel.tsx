@@ -1,19 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
 import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
 import type { FuelReport } from "@/lib/fuelReport";
-import { AMOUNT_CHOICES, amountName, amountQuery, amountShort, wonName, type Amount } from "@/lib/fillAmount";
+import { amountName, amountQuery, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
-import { DEFAULT_PLACE, PLACES } from "@/lib/places";
+import { DEFAULT_PLACE } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
-import { fuelName, PROFILE_FUELS, saveProfile, signedIn, type Profile } from "@/lib/profile";
+import { fuelName, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
-import { addLedgerEntry, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger } from "@/lib/savedLedger";
+import { addLedgerEntry, ledgerForMonth, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger } from "@/lib/savedLedger";
 import { parseWatch, watchStore } from "@/lib/watchSettings";
 import {
   AlertCard,
@@ -34,34 +34,25 @@ import {
   type PriceRow,
   type TaxImpact,
 } from "./AnswerCards";
+import { ConditionBar, initialPlace, MY, placeLabel, usablePlace } from "./ConditionBar";
 import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary } from "./FillCards";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
-import { CalendarIcon, CameraIcon, ChartIcon, DropIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
+import { CameraIcon, ChartIcon, PinIcon, PumpIcon, ReceiptIcon } from "./icons";
 import { fetchFill, useFullLiters } from "./useFill";
 import { useMounted, useProfile, useStored } from "./useStored";
 
-const FUELS = PROFILE_FUELS;
-const MY = "my";
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
 const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
 const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
 const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
-const DASHBOARD_QUESTION = "계기판 사진으로 내 연비 맞춰 줘";
 const PHOTO_QUESTION = "이 사진으로 주유 기록이나 연비 남겨 줘";
 const EXPLAIN_QUESTION = "요즘 기름값 왜 이래?";
 const REPORT_QUESTION = "이번 달 주유 리포트 보여 줘";
-const UREA_QUESTION = "요소수 재고 있는 주유소 알려 줘";
-const LAST_MONTH_QUESTION = "지난달 주유 리포트 보여 줘";
-const STANDING_QUESTION = "내 단골 주유소, 아직 동네에서 싼 편이야?";
-const SAVED_QUESTION = "이번 달 기름값, 평균보다 얼마나 아꼈어?";
 // 영수증·계기판 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
 const PHOTO_MAX_SIDE = 1600;
 const PHOTO_MAX_CHARS = 2_800_000;
-const PHOTO_INPUT_ID = "receipt-photo";
-// 사진 고르기 창을 연다. 추천 질문 칩에서도 부르므로 ref 대신 id로 찾는다.
-const pickPhoto = () => document.getElementById(PHOTO_INPUT_ID)?.click();
 // 서버가 받는 대화 한도(20턴, 한 턴 500자)에 맞춘다.
 const MAX_HISTORY = 19;
 const MAX_TURN_LENGTH = 500;
@@ -69,8 +60,6 @@ const MAX_TURN_LENGTH = 500;
 let alertSeq = 0;
 
 type Region = { key: string; area: string; name: string };
-// 탭: 홈(오늘의 기름값·제도), 탐색(주유소 찾기·점검·요소수), 내 기록(영수증·리포트·예보). 셋 다 같은 챗봇이다.
-export type ChatSection = "home" | "explore" | "records";
 type Station = { id: string; name: string; brand: string; price: number; address?: string; distanceKm?: number };
 type StationDetail = {
   name: string;
@@ -238,12 +227,6 @@ function toTurns(messages: Message[]) {
     .map((turn) => ({ ...turn, content: turn.content.slice(0, MAX_TURN_LENGTH) }));
 }
 
-// "2026-11-13" → "2026-10"
-function lastMonth(today: string) {
-  const [year, month] = today.split("-").map(Number);
-  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
-}
-
 // 시간대 인사(한국 시간). 오늘의 기름 소식을 아직 못 받았을 때만 쓴다.
 function greeting(hour: number) {
   if (hour >= 5 && hour < 11) return "좋은 아침이에요";
@@ -275,14 +258,6 @@ function SendIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 19V5" />
       <path d="m5 12 7-7 7 7" />
-    </svg>
-  );
-}
-
-function Chevron() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="pointer-events-none absolute right-2.5 size-4 text-ink-soft" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
@@ -342,20 +317,60 @@ function StarterList({ cards, chips, children }: { cards: Starter[]; chips: Star
   );
 }
 
-const SELECT =
-  "appearance-none rounded-full bg-ground py-1.5 pr-8 pl-3.5 text-sm font-semibold shadow-inset-sm focus-visible:outline-offset-1";
+// 대화 중 입력창 위의 추천 질문 줄
+function SuggestionRow({ suggestions, busy }: { suggestions: Starter[]; busy: boolean }) {
+  return (
+    <div className="no-scrollbar -my-2 flex gap-2.5 overflow-x-auto py-2 pr-1 pl-1 lg:flex-wrap lg:overflow-visible">
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion.label}
+          type="button"
+          onClick={suggestion.onClick}
+          disabled={busy}
+          className="shrink-0 rounded-full px-3 py-1.5 text-sm whitespace-nowrap shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:opacity-50"
+        >
+          {suggestion.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// 대시보드(탐색·내 기록)가 결과 패널에서 실행하는 기능. 누를 때마다 새 대화로 시작한다.
+export type PanelCommand =
+  | { kind: "nearby" }
+  | { kind: "totalCost" }
+  | { kind: "ask"; question: string }
+  | { kind: "photo"; question: string }
+  | { kind: "report"; month: string }
+  | { kind: "fillForm" }
+  | { kind: "forecast"; forecast: FillForecast };
+export type PanelHandle = { run: (command: PanelCommand) => void };
+export type PanelConditions = { fuel: string; place: string; amount: Amount };
 
 export default function ChatPanel({
   fixedQuestion,
   region,
-  section = "home",
+  variant = "page",
+  conditions,
+  ref,
+  onActivity,
+  examples = [],
 }: {
   fixedQuestion: string;
   region: Region;
-  section?: ChatSection;
+  // page: 홈 화면 전체 챗봇. panel: 대시보드 안 결과 패널(시작 화면·조건 줄·추천 줄 없음)
+  variant?: "page" | "panel";
+  // 대시보드의 조건 줄 값. 주면 이 안의 조건 줄 대신 쓴다.
+  conditions?: PanelConditions;
+  ref?: React.Ref<PanelHandle>;
+  onActivity?: (state: { busy: boolean; hasMessages: boolean }) => void;
+  // 패널이 비어 있을 때 보여 줄 예시 질문
+  examples?: string[];
 }) {
   const profile = useProfile();
   const mounted = useMounted();
+  const isPanel = variant === "panel";
   // 화면에서 고른 값이 있으면 그 값, 없으면 내 정보(로그인 전에는 기본값)를 쓴다.
   const [fuelChoice, setFuel] = useState<string | null>(null);
   const [placeChoice, setPlace] = useState<string | null>(null);
@@ -364,24 +379,30 @@ export default function ChatPanel({
   const [pending, setPending] = useState<SkeletonKind | null>(null);
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  // 대화 번호. 새 대화를 시작하면 올린다. 앞 대화의 늦게 온 답은 번호가 달라 붙이지 않는다.
+  const threadRef = useRef(0);
   // 사진 고르기를 연 질문(영수증·계기판). 입력창 버튼이면 null. 사진을 고르기 전에 화면이 다시 그려지므로 상태로 둔다.
   const [photoQuestion, setPhotoQuestion] = useState<string | null>(null);
-  const pickPhotoFor = (question: string | null) => {
+  // 대시보드 버튼으로 연 사진 고르기는 사진을 고른 뒤에 새 대화로 시작한다(취소하면 지금 대화를 그대로 둔다).
+  const photoFreshRef = useRef(false);
+  const pickPhotoFor = (question: string | null, fresh = false) => {
     setPhotoQuestion(question);
-    pickPhoto();
+    photoFreshRef.current = fresh;
+    photoInputRef.current?.click();
   };
   useStored(alertStore, parseAlerts);
   useStored(watchStore, parseWatch);
   const fills = useStored(fillStore, parseFills);
   const ledger = useStored(ledgerStore, parseLedger);
-  const fuel = fuelChoice ?? profile.fuel;
-  const amount = amountChoice ?? profile.amount;
+  const fuel = conditions?.fuel ?? fuelChoice ?? profile.fuel;
+  const amount = conditions?.amount ?? amountChoice ?? profile.amount;
   const fullTank = useFullLiters(profile.fullLiters);
-  const place = placeChoice === MY && !profile.location ? DEFAULT_PLACE : (placeChoice ?? (profile.location ? MY : DEFAULT_PLACE));
-  const placeName = place === MY && profile.location ? profile.location.label : PLACES[place].name;
+  const place = usablePlace(conditions?.place ?? placeChoice ?? initialPlace(profile), profile);
+  const placeName = placeLabel(place, profile);
   const homeArea = profile.area ?? { code: region.area, name: region.name };
   const loggedIn = mounted && signedIn(profile);
-  const amountOptions = AMOUNT_CHOICES.includes(amount) ? AMOUNT_CHOICES : [...AMOUNT_CHOICES.slice(0, -1), amount, "full" as const].sort((a, b) => (a === "full" ? 1 : b === "full" ? -1 : a - b));
   // 제도 금액 질문의 말: "5만원어치 넣는 데", "가득 넣는 데"
   const amountPhrase = (chosen: Amount) => `${chosen === "full" ? "가득" : amountName(chosen)} 넣는 데`;
 
@@ -393,12 +414,25 @@ export default function ChatPanel({
 
   useEffect(() => {
     // 첫 화면에서는 인사말이 보이도록 대화가 시작된 뒤에만 아래로 내린다.
-    if (messages.length > 0 || pending) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, pending]);
+    if (messages.length === 0 && !pending) return;
+    // 패널은 대화 목록만 내린다. scrollIntoView는 창까지 움직여, 대시보드를 내려 둔 채 상자를 누르면 페이지가 위로 끌려간다.
+    const list = listRef.current;
+    if (isPanel && list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+    else endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, pending, isPanel]);
+
+  const busy = pending !== null;
+  const hasMessages = messages.length > 0;
+  useEffect(() => {
+    onActivity?.({ busy, hasMessages });
+  }, [busy, hasMessages, onActivity]);
 
   async function run(kind: SkeletonKind, answer: () => Promise<Reply | Reply[] | null>) {
+    const thread = threadRef.current;
     setPending(kind);
     const reply = await answer();
+    // 그사이 새 대화를 시작했으면 이 답은 버린다.
+    if (thread !== threadRef.current) return;
     const retry = () => {
       setMessages((current) => current.filter((message) => !("retry" in message && message.retry === retry)));
       run(kind, answer);
@@ -413,16 +447,25 @@ export default function ChatPanel({
     run(kind, answer);
   }
 
+  // 새 대화: 앞 대화와 아직 안 온 답을 버린다.
+  function startThread() {
+    threadRef.current += 1;
+    setMessages([]);
+    setPending(null);
+  }
+
   const cheapestQuestion = profile.location
     ? `${profile.location.label} 근처 제일 싼 ${fuelName(fuel)} 어디야?`
     : `${homeArea.name}에서 제일 싼 ${fuelName(fuel)} 어디야?`;
 
-  const askCheapest = () => {
+  // 반경 5km 최저가. origin 없이 부르면 홈처럼 내 위치(없으면 내 지역 최저가)를 쓴다.
+  const askCheapest = (origin?: string) => {
     const chosen = fuel;
-    const near = profile.location;
-    ask(cheapestQuestion, "list", async () => {
+    const near = origin ?? (profile.location ? MY : null);
+    const question = origin ? `${placeLabel(origin, profile)} 근처 제일 싼 ${fuelName(chosen)} 어디야?` : cheapestQuestion;
+    ask(question, "list", async () => {
       const url = near
-        ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(MY) })}`
+        ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(near) })}`
         : `/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: homeArea.code })}`;
       const { ok, body } = await getJson(url);
       if (!ok || !body) return body?.error ? { from: "bot", text: body.error } : null;
@@ -512,23 +555,24 @@ export default function ChatPanel({
       summary: "주유 기록 입력 카드를 보여 줌. 이용자가 날짜와 금액을 넣고 계산을 누르면 다음 주유일을 알려 줌.",
     }));
 
-  // 이번 달 주유 리포트. AI 없이 장부로 셈하고, 단가는 그날 시도 평균과 비교한다.
-  const askReport = (month?: string) => {
-    const car = { ...profile, fuel };
-    ask(month ? LAST_MONTH_QUESTION : REPORT_QUESTION, "detail", async () => {
+  // 한 달 주유 리포트. AI 없이 장부로 셈하고, 단가는 그날 시도 평균과 비교한다. 장부는 그 달과 전달 기록만 보낸다.
+  const askReport = (month: string) => {
+    const question = month === kstClock().today.slice(0, 7) ? REPORT_QUESTION : `${Number(month.slice(5))}월 주유 리포트 보여 줘`;
+    ask(question, "detail", async () => {
       const { ok, body } = await getJson("/api/fuel-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ledger: ledgerForServer(), profile: car, month }),
+        body: JSON.stringify({ ledger: ledgerForMonth(month), profile, month }),
       });
       if (!ok || !body?.month) return body?.error ? { from: "bot", text: body.error } : null;
       return { from: "bot", report: body, summary: reportSummary(body) };
     });
   };
 
-  function submitForecast(forecast: FillForecast) {
+  // 다음 주유일과 그날 넣을 곳. save: false면 주유 기록을 덮어쓰지 않는다(내 기록에서 장부로 셈한 예보).
+  function submitForecast(forecast: FillForecast, { save = true }: { save?: boolean } = {}) {
     const [chosenFuel, chosenPlace] = [fuel, place];
-    saveFills(forecast.records);
+    if (save) saveFills(forecast.records);
     ask(`주유 기록 ${forecast.records.length}번으로 다음 주유일 계산해 줘`, "text", async () => {
       // 추천은 기록에서 보통 넣는 금액(없으면 리터, 그것도 없으면 내 차 설정)으로 셈한다.
       const typical: Record<string, string> =
@@ -580,8 +624,10 @@ export default function ChatPanel({
     checkAlert(alert);
   }
 
-  function askFree(question: string, photo?: Photo) {
-    const history = toTurns([...messages, { from: "user", text: question }]);
+  // fresh: 새 대화로 시작한 질문이라 앞 대화 기록을 보내지 않는다.
+  function askFree(question: string, photo?: Photo, fresh = false) {
+    const history = toTurns([...(fresh ? [] : messages), { from: "user", text: question }]);
+    const screen = { fuel, amount, place };
     ask(question, "text", async () => {
       const { ok, body } = await getJson("/api/chat", {
         method: "POST",
@@ -593,6 +639,8 @@ export default function ChatPanel({
           image: photo ? { mediaType: photo.mediaType, data: photo.data } : undefined,
           // 주유 장부는 리포트·주유소 점검 도구가 쓸 때만 AI에 들어간다.
           ledger: ledgerForServer(),
+          // 조건 줄의 유종·금액·출발 위치. 질문에 따로 말하지 않으면 이 값으로 조회한다.
+          conditions: screen,
         }),
       });
       if (!ok || !body?.text) return body?.error ? { from: "bot", text: body.error } : null;
@@ -625,11 +673,20 @@ export default function ChatPanel({
 
   async function sendPhoto(file: File | undefined) {
     if (!file || pending) return;
+    const fresh = photoFreshRef.current;
+    photoFreshRef.current = false;
+    const thread = threadRef.current;
+    // 사진을 고르면 바로 답을 준비하는 중으로 둔다. 줄이는 동안 버튼이 잠기고, 휴대폰 시트도 이때 열려
+    // 사진을 읽지 못했다는 안내가 닫힌 시트 뒤에 묻히지 않는다.
+    setPending("text");
     const photo = await shrinkPhoto(file);
+    if (thread !== threadRef.current) return;
     const question = draft.trim() || photoQuestion || PHOTO_QUESTION;
     setPhotoQuestion(null);
     setDraft("");
+    if (fresh) startThread();
     if (!photo) {
+      setPending(null);
       setMessages((current) => [
         ...current,
         { from: "user", text: question },
@@ -637,7 +694,7 @@ export default function ChatPanel({
       ]);
       return;
     }
-    askFree(question, photo);
+    askFree(question, photo, fresh);
   }
 
   function setFillStatus(id: number, status: AlertStatus) {
@@ -710,7 +767,7 @@ export default function ChatPanel({
   function applyMeasured() {
     const reading = measuredKmpl(ledgerForServer());
     const known = profile.reading;
-    if (!reading || !loggedIn) return;
+    if (!reading) return;
     if (known?.kind === "measured" && known.date === reading.date && known.from === reading.from && known.kmpl === reading.kmpl) return;
     const manual = profile.kmplSource === "manual";
     const stored = saveProfile({ ...profile, reading, kmplSource: manual ? "manual" : "measured" });
@@ -722,6 +779,24 @@ export default function ChatPanel({
     setMessages((current) => [...current, { from: "bot", text }]);
   }
 
+  // 대시보드에서 누른 기능. 사진 고르기 말고는 바로 새 대화로 시작한다.
+  useImperativeHandle(ref, () => ({
+    run(command: PanelCommand) {
+      if (command.kind === "photo") {
+        pickPhotoFor(command.question, true);
+        return;
+      }
+      startThread();
+      setDraft("");
+      if (command.kind === "nearby") askCheapest(place);
+      else if (command.kind === "totalCost") askTotalCost();
+      else if (command.kind === "ask") askFree(command.question, undefined, true);
+      else if (command.kind === "report") askReport(command.month);
+      else if (command.kind === "fillForm") askForecast();
+      else submitForecast(command.forecast, { save: false });
+    },
+  }));
+
   function submit(event: React.FormEvent) {
     event.preventDefault();
     const question = draft.trim();
@@ -730,57 +805,19 @@ export default function ChatPanel({
     askFree(question);
   }
 
-  const busy = pending !== null;
-  // 영수증으로 남긴 가장 최근 주유소가 있으면 그곳을 점검하자고 권한다.
-  const lastStation = mounted ? ledger.findLast((entry) => entry.stationName)?.stationName : null;
-  const trustQuestion = lastStation ? `${lastStation} 믿을 만한지 점검해 줘` : "단골 주유소 믿을 만한지 점검해 줘";
-  const alttleQuestion = `${homeArea.name} 알뜰주유소, 진짜 싼 거 맞아?`;
-  const highwayQuestion = `${placeName}에서 서울 가는 길, 휴게소 어디서 넣을까?`;
-  // 탭마다 시작 질문(큰 카드 4개와 작은 칩)이 다르다. 대화 중 입력창 위에도 같은 질문을 둔다.
-  const starters: Record<ChatSection, { cards: Starter[]; chips: Starter[] }> = {
-    home: {
-      cards: [
-        { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
-        { label: EXPLAIN_QUESTION, onClick: () => askFree(EXPLAIN_QUESTION), Icon: ChartIcon },
-        { label: `유류세 인하 끝나면 ${amountPhrase(amount)} 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
-        { label: CAP_QUESTION, onClick: askCap, Icon: PumpIcon },
-      ],
-      chips: [
-        { label: fixedQuestion, onClick: askFixed },
-        { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
-      ],
-    },
-    explore: {
-      cards: [
-        { label: cheapestQuestion, onClick: askCheapest, Icon: PinIcon },
-        { label: `${placeName}에서 거리까지 따지면 어디가 나아?`, onClick: askTotalCost, Icon: RouteIcon },
-        { label: trustQuestion, onClick: () => askFree(trustQuestion), Icon: ShieldIcon },
-        { label: UREA_QUESTION, onClick: () => askFree(UREA_QUESTION), Icon: DropIcon },
-      ],
-      chips: [
-        { label: highwayQuestion, onClick: () => askFree(highwayQuestion) },
-        { label: STANDING_QUESTION, onClick: () => askFree(STANDING_QUESTION) },
-        { label: alttleQuestion, onClick: () => askFree(alttleQuestion) },
-      ],
-    },
-    records: {
-      cards: [
-        { label: RECEIPT_QUESTION, onClick: () => pickPhotoFor(RECEIPT_QUESTION), Icon: CameraIcon },
-        { label: REPORT_QUESTION, onClick: () => askReport(), Icon: ChartIcon },
-        { label: FORECAST_QUESTION, onClick: askForecast, Icon: CalendarIcon },
-        { label: LAST_MONTH_QUESTION, onClick: () => askReport(lastMonth(kstClock().today)), Icon: ReceiptIcon },
-      ],
-      chips: [
-        { label: DASHBOARD_QUESTION, onClick: () => pickPhotoFor(DASHBOARD_QUESTION) },
-        { label: SAVED_QUESTION, onClick: () => askFree(SAVED_QUESTION) },
-      ],
-    },
-  };
-  const { cards, chips } = starters[section];
+  // 홈의 시작 질문(큰 카드 4개와 작은 칩). 대화 중 입력창 위에도 같은 질문을 둔다.
+  const cards: Starter[] = [
+    { label: cheapestQuestion, onClick: () => askCheapest(), Icon: PinIcon },
+    { label: EXPLAIN_QUESTION, onClick: () => askFree(EXPLAIN_QUESTION), Icon: ChartIcon },
+    { label: `유류세 인하 끝나면 ${amountPhrase(amount)} 얼마 더 들어?`, onClick: askTax, Icon: ReceiptIcon },
+    { label: CAP_QUESTION, onClick: askCap, Icon: PumpIcon },
+  ];
+  const chips: Starter[] = [
+    { label: fixedQuestion, onClick: askFixed },
+    { label: ALERT_EXAMPLE, onClick: () => askFree(ALERT_EXAMPLE) },
+  ];
   const suggestions = [...cards, ...chips];
-  // 내 기록 탭 첫 줄: 장부와 주유 기록을 합친 횟수와 가장 최근 날짜
   const knownFills = mergeLedger(ledger, fills);
-  const records = section === "records" ? knownFills : [];
   const economy = fuelEconomy(profile);
   // 같은 날 계기판 사진에서 읽은 누적 주행거리(영수증 카드에 채워 준다)
   const odometerOn = (date: string) => {
@@ -790,32 +827,43 @@ export default function ChatPanel({
     return null;
   };
   const today = mounted ? kstClock().today : "";
-  const briefing = useBriefing(fuel, homeArea.code, mounted);
+  // 오늘의 기름 소식은 홈에서만 받는다(오피넷 하루 한도).
+  const briefing = useBriefing(fuel, homeArea.code, mounted && !isPanel);
   const headline = mounted ? (newsHeadline(today, fuel, briefing?.data ?? null) ?? greeting(kstClock().hour)) : "안녕하세요";
 
   return (
-    <section aria-label="주유 챗봇" className="flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]">
-      <div aria-live="polite" className="flex flex-1 flex-col gap-5 overflow-y-auto pt-4 pb-4">
-        {messages.length === 0 && !busy && section !== "home" && (
-          <div className="m-auto w-full max-w-2xl py-4">
-            <div className="flex flex-col items-center text-center">
-              <span aria-hidden="true" className="flame-orb size-12" />
-              <h1 className="mt-4 text-[1.75rem] leading-tight font-bold tracking-tight text-balance sm:text-4xl">
-                {section === "explore" ? "주유소 탐색" : "내 기록"}
-              </h1>
-              <p className="mt-2 text-ink-soft text-pretty">
-                {section === "explore"
-                  ? "가까운 최저가부터 믿을 만한 곳, 요소수 재고, 고속도로 휴게소까지 물어보세요."
-                  : records.length > 0
-                    ? `주유 기록 ${records.length}번 · 가장 최근 ${dayWithWeekday(records.at(-1)!.date)}`
-                    : "영수증 사진을 보내면 주유 기록이 쌓이고, 달마다 리포트로 모아 드려요."}
-              </p>
-            </div>
-            <StarterList cards={cards} chips={chips} />
+    <section
+      aria-label={isPanel ? "결과" : "주유 챗봇"}
+      data-chat={isPanel ? undefined : ""}
+      className={
+        isPanel
+          ? "flex h-full min-h-0 flex-col"
+          : "flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]"
+      }
+    >
+      <div ref={listRef} aria-live="polite" className={`flex flex-1 flex-col gap-5 overflow-y-auto pb-4 ${isPanel ? "pt-1" : "pt-4"}`}>
+        {messages.length === 0 && !busy && isPanel && (
+          <div className="my-auto py-6">
+            <p className="text-[15px] font-semibold">이 탭에서 궁금한 것 물어보기</p>
+            <p className="mt-1 text-sm text-ink-soft">위에서 기능을 누르거나, 아래에 직접 적어 주세요.</p>
+            {examples.length > 0 && (
+              <div className="mt-4 flex flex-col items-start gap-2">
+                {examples.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => askFree(example)}
+                    className="rounded-full px-3.5 py-2 text-left text-sm shadow-raised-sm hover:bg-canvas"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {messages.length === 0 && !busy && section === "home" && (
+        {messages.length === 0 && !busy && !isPanel && (
           <div className="m-auto w-full max-w-2xl py-4">
             <div className="flex flex-col items-center text-center">
               <span aria-hidden="true" className="flame-orb flame-orb-glow size-16 sm:size-[4.5rem]" />
@@ -887,7 +935,6 @@ export default function ChatPanel({
                 kmplStatus={message.kmplStatus}
                 odometerStatus={message.odometerStatus}
                 current={economy}
-                signedIn={loggedIn}
                 hasFill={knownFills.some((entry) => entry.date === message.dashboard.date)}
                 busy={busy}
                 onUseKmpl={() => applyDashboardKmpl(message.id, message.dashboard)}
@@ -1061,71 +1108,15 @@ export default function ChatPanel({
       </div>
 
       <div className="space-y-3 pt-2 pb-3">
-        <div className="no-scrollbar -mx-1 flex items-center gap-2 overflow-x-auto px-1 py-0.5">
-          <div role="radiogroup" aria-label="유종" className="flex shrink-0 rounded-full p-1 shadow-inset-sm">
-            {FUELS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="radio"
-                aria-checked={fuel === item}
-                onClick={() => setFuel(item)}
-                className={`rounded-full px-3 py-1 text-sm font-semibold ${fuel === item ? "bg-accent text-on-accent" : "text-ink-soft"}`}
-              >
-                {fuelName(item)}
-              </button>
-            ))}
-          </div>
-          <span className="relative flex items-center">
-            <select aria-label="출발 위치" title="출발 위치" value={place} onChange={(event) => setPlace(event.target.value)} className={SELECT}>
-              {profile.location && <option value={MY}>{profile.location.label}(내 위치)</option>}
-              <optgroup label="울주군 읍면">
-                {Object.entries(PLACES).map(([key, item]) => (
-                  <option key={key} value={key}>
-                    {item.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <Chevron />
-          </span>
-          <span className="relative flex items-center">
-            <select
-              aria-label="주유 금액"
-              title="한 번에 넣는 금액"
-              value={String(amount)}
-              onChange={(event) => setAmount(event.target.value === "full" ? "full" : Number(event.target.value))}
-              className={SELECT}
-            >
-              {amountOptions.map((option) => (
-                <option key={option} value={String(option)}>
-                  {amountShort(option)}
-                </option>
-              ))}
-            </select>
-            <Chevron />
-          </span>
-        </div>
-
-        {(messages.length > 0 || busy) && (
-          <div className="no-scrollbar -my-2 flex gap-2.5 overflow-x-auto py-2 pr-1 pl-1 lg:flex-wrap lg:overflow-visible">
-            {suggestions.map((suggestion) => (
-              <button
-                key={suggestion.label}
-                type="button"
-                onClick={suggestion.onClick}
-                disabled={busy}
-                className="shrink-0 rounded-full px-3 py-1.5 text-sm whitespace-nowrap shadow-raised-sm transition-shadow hover:shadow-raised active:shadow-inset-sm disabled:opacity-50"
-              >
-                {suggestion.label}
-              </button>
-            ))}
-          </div>
+        {!isPanel && (
+          <ConditionBar fuel={fuel} place={place} amount={amount} onFuel={setFuel} onPlace={setPlace} onAmount={setAmount} />
         )}
+
+        {!isPanel && (messages.length > 0 || busy) && <SuggestionRow suggestions={suggestions} busy={busy} />}
 
         <form onSubmit={submit} className="flex items-center gap-1 rounded-full bg-ground p-1.5 shadow-raised">
           <input
-            id={PHOTO_INPUT_ID}
+            ref={photoInputRef}
             type="file"
             accept="image/*"
             hidden
@@ -1148,7 +1139,15 @@ export default function ChatPanel({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             maxLength={500}
-            placeholder={loggedIn ? "예: 우리 집 근처 경유, 거리까지 따지면?" : "예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"}
+            placeholder={
+              isPanel
+                ? hasMessages
+                  ? "이어서 물어보기"
+                  : "궁금한 것을 적어 주세요"
+                : loggedIn
+                  ? "예: 우리 집 근처 경유, 거리까지 따지면?"
+                  : "예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"
+            }
             aria-label="질문 입력"
             className="min-w-0 flex-1 rounded-full bg-transparent px-2 py-2.5 text-[15px] placeholder:text-ink-soft focus-visible:outline-offset-1"
           />
@@ -1161,7 +1160,9 @@ export default function ChatPanel({
             <SendIcon />
           </button>
         </form>
-        <p className="text-center text-[11px] text-ink-soft">유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이</p>
+        {!isPanel && (
+          <p className="text-center text-[11px] text-ink-soft">유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이</p>
+        )}
       </div>
     </section>
   );

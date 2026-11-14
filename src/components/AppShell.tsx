@@ -8,15 +8,13 @@ import { signedIn } from "@/lib/profile";
 import { BellIcon, CompassIcon, HomeIcon, RecordsIcon, UserIcon } from "./icons";
 import { useMounted, useProfile } from "./useStored";
 
-// 탭은 챗봇으로 들어가는 입구다. 홈·탐색·내 기록은 같은 챗봇에 주제별 시작 질문만 다르다. 내 정보는 프로필 버튼으로 연다.
+// 홈은 챗봇, 탐색·내 기록은 기능과 내 숫자가 먼저 보이는 대시보드(결과는 대시보드 안 패널), 알림은 알림 조건. 내 정보는 프로필 버튼으로 연다.
 const NAV = [
   { href: "/", label: "홈", Icon: HomeIcon },
   { href: "/explore", label: "탐색", Icon: CompassIcon },
   { href: "/records", label: "내 기록", Icon: RecordsIcon },
   { href: "/alerts", label: "알림", Icon: BellIcon },
 ];
-// 챗봇 화면은 입력창 아래에 데이터 출처를 적으므로 바닥글을 빼는 주소
-const CHAT_PATHS = ["/", "/explore", "/records"];
 
 // 한국석유공사 로고(공사 원본 파일에서 바깥 여백만 잘라 냄). 서포터즈 활동 표시로 머리글에 둔다.
 const KNOC_LOGO = { src: "/brand/knoc-logo.png", width: 429, height: 208 };
@@ -47,7 +45,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const loggedIn = mounted && signedIn(profile);
 
   return (
-    <div className="flex min-h-dvh">
+    // 폭과 바닥글은 주소가 아니라 화면 안 표시로 정한다(globals.css의 app-shell). 레이아웃은 서버에서 주소를 모르고 그려질 수 있어서다.
+    // 대시보드(data-wide)는 결과 패널까지 한 화면에 두므로 넓게 쓰고, 챗봇(data-chat)은 입력창 아래에 출처를 적으므로 바닥글을 뺀다.
+    <div className="app-shell flex min-h-dvh">
       <aside className="sticky top-0 hidden h-dvh w-[5.5rem] shrink-0 flex-col items-center border-r border-hairline py-5 lg:flex">
         <Link href="/" aria-label="기름알리미 첫 화면">
           <Image src="/brand/yuilmui-mark.png" alt="팀 유일무이 로고" width={36} height={36} priority />
@@ -77,7 +77,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 bg-ground/90 backdrop-blur">
-          <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-3 px-4 sm:px-6">
+          <div className="shell-width mx-auto flex h-14 w-full max-w-5xl items-center gap-3 px-4 sm:px-6">
             <Image src={KNOC_LOGO.src} alt="한국석유공사" width={KNOC_LOGO.width} height={KNOC_LOGO.height} className="h-9 w-auto" priority />
             <span aria-hidden="true" className="h-5 w-px bg-hairline" />
             <Link href="/" className="flex items-center gap-2">
@@ -98,12 +98,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">{children}</main>
-        {!CHAT_PATHS.includes(path) && (
-          <footer className="px-4 pt-6 pb-28 text-center text-xs text-ink-soft lg:pb-5">
-            유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이
-          </footer>
-        )}
+        <main className="shell-width mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">{children}</main>
+        <footer className="shell-footer px-4 pt-6 pb-28 text-center text-xs text-ink-soft lg:pb-5">
+          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이
+        </footer>
 
         <nav
           aria-label="주 메뉴"
