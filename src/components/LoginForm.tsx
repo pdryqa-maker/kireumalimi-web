@@ -1,6 +1,7 @@
 "use client";
 
-// 간편 로그인: 부를 이름, 내 위치, 자주 가는 곳, 내 차, 주유 할인·뺀 상표를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
+// 로그인과 내 정보: 위쪽은 계정 로그인·가입(AccountPanel), 아래는 부를 이름, 내 위치, 자주 가는 곳, 내 차, 주유 할인·뺀 상표.
+// 내 정보는 이 브라우저에 저장하고, 로그인했으면 accountSync가 계정에도 올린다. 게스트도 로그인 없이 쓸 수 있다.
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -22,19 +23,20 @@ import { placeAt, placeGroups } from "@/lib/places";
 import {
   cleanText,
   fuelName,
-  GUEST,
   LIMITS,
   PROFILE_FUELS,
-  profileStore,
   saveProfile,
   signedIn,
   type MyPlace,
   type Profile,
 } from "@/lib/profile";
+import { clearBrowserProfile, type AccountState } from "@/lib/accountSync";
+import AccountPanel from "./AccountPanel";
 import { loadAreas, type Area } from "./areaApi";
 import { CameraIcon, LocateIcon } from "./icons";
 import { shrinkPhoto } from "./photo";
 import { useFullLiters } from "./useFill";
+import { useAccount } from "./useAccount";
 import { useMounted, useProfile } from "./useStored";
 
 const FIELD =
@@ -298,7 +300,13 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   );
 }
 
+// 로그인하거나 계정이 바뀌면 입력 중이던 값을 버리고 계정 값으로 다시 그린다(게스트 때 입력하던 값이 계정 값을 덮지 않게).
 export default function LoginForm() {
+  const account = useAccount();
+  return <ProfileForm key={account.status === "account" ? `account:${account.id}` : "guest"} account={account} />;
+}
+
+function ProfileForm({ account }: { account: AccountState }) {
   const router = useRouter();
   const saved = useProfile();
   const mounted = useMounted();
@@ -538,7 +546,7 @@ export default function LoginForm() {
   }
 
   function signOut() {
-    profileStore.write(GUEST);
+    clearBrowserProfile();
     setDraft(null);
     router.push("/");
   }
@@ -549,13 +557,18 @@ export default function LoginForm() {
         <span aria-hidden="true" className="flame-orb size-12 shrink-0" />
         <div>
           <h1 id="login-title" className="text-2xl font-bold tracking-tight sm:text-3xl">
-            {wasSignedIn ? "내 정보" : "간편 로그인"}
+            {account.status === "guest" ? "로그인" : "내 정보"}
           </h1>
           <p className="mt-1 text-ink-soft">
-            {wasSignedIn ? "바꾼 내용은 다음 질문부터 반영돼요." : "내 위치와 내 차를 알려 주면 그 기준으로 답해 드려요."}
+            {account.status === "account"
+              ? `${account.id} 계정으로 로그인했어요. 어느 기기에서 로그인해도 같은 정보가 보여요.`
+              : account.status === "guest"
+                ? "로그인하면 다른 기기에서도 내 정보와 주유 기록이 그대로 보여요."
+                : "내 위치와 내 차를 알려 주면 그 기준으로 답해 드려요."}
           </p>
         </div>
       </div>
+      <AccountPanel part="top" />
 
       <form onSubmit={submit} className="mt-2" aria-label="내 정보 입력">
         <Section title="부를 이름">
@@ -571,7 +584,7 @@ export default function LoginForm() {
           />
         </Section>
 
-        <Section title="내 위치" note="근처 주유소, 거리까지 고려한 추천, 내 지역 최저가에 써요. 위치는 100m 단위로 줄여 이 브라우저에만 저장해요.">
+        <Section title="내 위치" note="근처 주유소, 거리까지 고려한 추천, 내 지역 최저가에 써요. 위치는 100m 단위로 줄여 저장해요.">
           <div className="grid grid-cols-2 gap-2.5">
             <button type="button" onClick={locate} disabled={locating} className={`${BUTTON} flex items-center justify-center gap-2 bg-accent text-on-accent`}>
               <LocateIcon className="size-4 shrink-0" />
@@ -661,7 +674,7 @@ export default function LoginForm() {
           )}
         </Section>
 
-        <Section title="자주 가는 곳" note="출퇴근 길 추천과 요소수 찾기에 써요. 위치는 100m 단위로 줄여 이 브라우저에만 저장해요.">
+        <Section title="자주 가는 곳" note="출퇴근 길 추천과 요소수 찾기에 써요. 위치는 100m 단위로 줄여 저장해요.">
           <div className="grid gap-2.5">
             <PlaceRow title="집" place={form.home} area={form.area} mounted={mounted} onChange={setPlace("home")} />
             <PlaceRow title="회사" place={form.work} area={form.area} mounted={mounted} onChange={setPlace("work")} />
@@ -1046,15 +1059,18 @@ export default function LoginForm() {
           <button type="submit" className="rounded-full bg-accent px-6 py-3 font-semibold text-on-accent shadow-raised-sm">
             {wasSignedIn ? "저장하고 돌아가기" : "이 정보로 시작하기"}
           </button>
-          {wasSignedIn && (
+          {wasSignedIn && (account.status === "guest" || account.status === "unavailable") && (
             <button type="button" onClick={signOut} className={`${BUTTON} text-ink-soft`}>
-              로그아웃
+              이 브라우저의 내 정보 지우기
             </button>
           )}
+          <AccountPanel part="actions" />
         </div>
         <p className="mt-4 text-xs leading-relaxed text-ink-soft">
-          비밀번호 없이 이 브라우저에만 저장해요. 질문할 때 부를 이름, 위치 이름, 내 차 정보, 할인·뺀 상표를 AI에 함께 보내고,
-          위치 좌표(내 위치·집·회사)는 주유소 조회에만 써요. 로그아웃하면 내 정보를 지워요(알림 조건과 주유 기록은 남아요).{" "}
+          {account.status === "account"
+            ? "이 브라우저와 계정에 저장해요. 로그아웃하면 이 브라우저에서 내 정보와 기록을 지우고, 계정에는 남아요."
+            : "로그인하지 않으면 이 브라우저에만 저장해요. 이 브라우저의 내 정보 지우기를 누르면 내 정보를 지워요(알림 조건과 주유 기록은 남아요)."}{" "}
+          질문할 때 부를 이름, 위치 이름, 내 차 정보, 할인·뺀 상표를 AI에 함께 보내고, 위치 좌표(내 위치·집·회사)는 주유소 조회에만 써요.{" "}
           <Link href="/privacy" className="underline underline-offset-4">
             개인정보 처리방침
           </Link>

@@ -1,13 +1,16 @@
 "use client";
 
 // 화면 틀: 넓은 화면은 왼쪽 메뉴, 휴대폰은 아래 탭. 위쪽에는 기관 로고와 로그인(내 정보)이 있다.
+// 로그인 버튼과 아바타는 계정 로그인 여부(useAccount)로 정한다. 이름만 저장한 게스트에게도 로그인 버튼을 보인다.
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signedIn } from "@/lib/profile";
+import type { AccountState } from "@/lib/accountSync";
+import AccountNotice from "./AccountNotice";
 import { BellIcon, CompassIcon, HomeIcon, RecordsIcon, UserIcon } from "./icons";
 import { LocationPicker } from "./LocationPicker";
-import { useMounted, useProfile } from "./useStored";
+import { useAccount } from "./useAccount";
+import { useProfile } from "./useStored";
 
 // 홈은 챗봇, 탐색·내 기록은 기능과 내 숫자가 먼저 보이는 대시보드(결과는 대시보드 안 패널), 알림은 알림 조건. 내 정보는 프로필 버튼으로 연다.
 const NAV = [
@@ -20,10 +23,13 @@ const NAV = [
 // 한국석유공사 로고(공사 원본 파일에서 바깥 여백만 잘라 냄). 서포터즈 활동 표시로 머리글에 둔다.
 const KNOC_LOGO = { src: "/brand/knoc-logo.png", width: 429, height: 208 };
 
+// 계정 아바타: 부를 이름 첫 글자, 없으면 아이디 첫 글자. 로그인 전이거나 아직 모르면 빈 자리 표시.
+const avatarLetter = (account: AccountState, name: string) => (name || account.id).slice(0, 1).toUpperCase();
+
 function Avatar({ size = "size-9" }: { size?: string }) {
   const profile = useProfile();
-  const mounted = useMounted();
-  if (!mounted || !signedIn(profile)) {
+  const account = useAccount();
+  if (account.status !== "account") {
     return (
       <span className={`grid ${size} place-items-center rounded-full text-ink-soft shadow-raised-sm`}>
         <UserIcon className="size-[18px]" />
@@ -32,7 +38,7 @@ function Avatar({ size = "size-9" }: { size?: string }) {
   }
   return (
     <span aria-hidden="true" className={`grid ${size} place-items-center rounded-full bg-accent text-sm font-semibold text-on-accent`}>
-      {profile.name.slice(0, 1)}
+      {avatarLetter(account, profile.name)}
     </span>
   );
 }
@@ -42,8 +48,9 @@ const isActive = (path: string, href: string) => (href === "/" ? path === "/" : 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const profile = useProfile();
-  const mounted = useMounted();
-  const loggedIn = mounted && signedIn(profile);
+  const account = useAccount();
+  const loggedIn = account.status === "account";
+  const myLabel = `${profile.name || account.id}님 내 정보`;
 
   return (
     // 폭과 바닥글은 주소가 아니라 화면 안 표시로 정한다(globals.css의 app-shell). 레이아웃은 서버에서 주소를 모르고 그려질 수 있어서다.
@@ -71,7 +78,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <Link href="/login" aria-label={loggedIn ? `${profile.name}님 내 정보` : "간편 로그인"} className="mt-auto">
+        <Link href="/login" aria-label={loggedIn ? myLabel : "로그인"} className="mt-auto">
           <Avatar size="size-10" />
         </Link>
       </aside>
@@ -86,8 +93,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="text-[17px] font-bold tracking-tight">기름알리미</span>
             </Link>
             <div className="ml-auto flex items-center gap-2.5">
-              {loggedIn ? (
-                <Link href="/login" aria-label={`${profile.name}님 내 정보`} className="lg:hidden">
+              {loggedIn || account.status === "unknown" ? (
+                <Link href="/login" aria-label={loggedIn ? myLabel : "내 정보"} className="lg:hidden">
                   <Avatar />
                 </Link>
               ) : (
@@ -99,7 +106,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="shell-width mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">{children}</main>
+        <main className="shell-width mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">
+          <AccountNotice />
+          {children}
+        </main>
         <footer className="shell-footer px-4 pt-6 pb-28 text-center text-xs text-ink-soft lg:pb-5">
           유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이 ·{" "}
           <Link href="/privacy" className="underline underline-offset-4">

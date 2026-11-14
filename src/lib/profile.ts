@@ -1,4 +1,4 @@
-// 간편 로그인으로 받은 내 정보. 비밀번호 없이 이 브라우저에만 저장한다(실제 서비스는 카카오 로그인으로 제안).
+// 내 정보. 이 브라우저에 저장하고, 계정으로 로그인하면 계정에도 올려 다른 기기와 맞춘다(lib/accountSync.ts).
 // 서버는 질문을 받을 때 이 값을 다시 검사해서 쓴다. 정확한 좌표는 AI에 보내지 않고 조회에만 쓴다.
 import { browserStore } from "./browserStore";
 import { cleanBrands, cleanDiscounts, type BrandKey, type Discount, type Prefs } from "./discounts";
@@ -163,5 +163,6 @@ export function parseProfile(raw: string) {
 }
 
 export const saveProfile = (profile: Profile) => profileStore.write(cleanProfile(profile));
+// '내 정보를 저장함'(부를 이름이 있음)을 뜻한다. 계정 로그인 여부는 useAccount()로 따로 본다.
 export const signedIn = (profile: Profile) => profile.name !== "";
 export const prefsOf = (profile: Profile): Prefs => ({ discounts: profile.discounts, excludeBrands: profile.excludeBrands });

@@ -346,7 +346,7 @@ export function AlertCard({
         <p className={`mt-4 w-fit ${TAG}`}>{STATUS_TEXT[status]}</p>
       )}
       <p className="mt-3 text-xs text-ink-soft">
-        조건은 이 브라우저에만 저장하고, 확인할 때 오피넷 최저가와 맞춰 봐요.
+        조건은 이 브라우저에 저장하고(로그인했으면 계정에도), 확인할 때 오피넷 최저가와 맞춰 봐요.
       </p>
     </div>
   );
@@ -495,7 +495,7 @@ export function FillProposalCard({
         <p className={`mt-4 w-fit ${TAG}`}>{FILL_STATUS_TEXT[status]}</p>
       )}
       <p className="mt-3 text-xs text-ink-soft">
-        값이 다르면 넣지 말고 다시 찍어 주세요. 사진은 저장하지 않고, 기록은 이 브라우저에만 최근 5번까지 남겨요.
+        값이 다르면 넣지 말고 다시 찍어 주세요. 사진은 저장하지 않고, 기록은 최근 5번까지 이 브라우저에 남겨요(로그인했으면 계정에도).
       </p>
     </div>
   );

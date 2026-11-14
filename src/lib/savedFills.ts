@@ -1,4 +1,4 @@
-// 내 차 주유 기록. 시제품이라 이 브라우저에만 저장한다(실제 서비스는 카카오톡 채널에서 받는다, 제안).
+// 내 차 주유 기록. 이 브라우저에 저장하고, 로그인했으면 accountSync가 계정에도 올린다.
 import { browserStore, parseList } from "./browserStore";
 import type { FillRecord } from "./fillForecast";
 

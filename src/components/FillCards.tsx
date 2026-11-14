@@ -133,7 +133,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
           </button>
         )}
       </div>
-      <p className="mt-3 text-xs text-ink-soft">기록은 이 브라우저에만 저장해요.</p>
+      <p className="mt-3 text-xs text-ink-soft">기록은 이 브라우저에 저장하고, 로그인했으면 계정에도 올려요.</p>
     </form>
   );
 }
@@ -299,7 +299,7 @@ export function ReportCard({ report, onReceipt }: { report: FuelReport; onReceip
         </>
       )}
       <p className="mt-3 text-xs text-ink-soft">
-        주행거리는 넣은 양 × 연비({report.kmpl}km/L)로 추정한 값이에요. 기록은 이 브라우저에만 저장해요.
+        주행거리는 넣은 양 × 연비({report.kmpl}km/L)로 추정한 값이에요. 기록은 이 브라우저에 저장하고, 로그인했으면 계정에도 올려요.
       </p>
     </div>
   );

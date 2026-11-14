@@ -460,7 +460,7 @@ export default function AlertsManager() {
           </p>
         )}
         <p className="mt-5 text-xs leading-relaxed text-ink-soft">
-          지금은 알림을 보내지 않고 받을 알림을 미리 보여 줘요. 조건은 이 브라우저에만 저장해요.
+          지금은 알림을 보내지 않고 받을 알림을 미리 보여 줘요. 조건은 이 브라우저에 저장하고, 로그인했으면 계정에도 올려요.
         </p>
       </section>
 

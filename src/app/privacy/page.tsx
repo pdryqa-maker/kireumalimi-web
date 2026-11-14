@@ -11,8 +11,15 @@ const OPERATOR = "팀 유일무이";
 const CONTACT = "yuilmuyi@gmail.com";
 const EFFECTIVE = "2026년 11월 14일";
 
-// 처리하는 정보. 내용은 코드에서 확인한 사실만 적는다(저장: src/lib/*Store, 보내는 곳: src/lib/chatbot.ts, opinet.ts, expressway.ts).
+// 처리하는 정보. 내용은 코드에서 확인한 사실만 적는다(저장: src/lib/*Store, 계정: src/lib/account/*, src/lib/accountSync.ts,
+// 보내는 곳: src/lib/chatbot.ts, opinet.ts, expressway.ts).
 const ITEMS = [
+  {
+    name: "계정(로그인한 경우)",
+    detail:
+      "아이디, 비밀번호(되돌릴 수 없게 바꾼 값만 저장하고 원래 비밀번호는 저장하지 않아요), 가입 시각과 마지막 저장 시각, 로그인에 실패한 횟수(10분 동안만)",
+    purpose: "로그인, 내 기록을 다른 사람 것과 나누기, 다른 기기에서도 같은 정보 보이기, 비밀번호를 여러 번 넣어 보는 것 막기",
+  },
   {
     name: "부를 이름, 내 차",
     detail: "이름, 유종, 차종이나 차 크기, 연비, 한 번에 넣는 금액, 한 달 주행거리, 요소수가 필요한 차인지, 주유 할인과 뺀 상표",
@@ -53,6 +60,12 @@ const SENDS = [
     link: { href: "https://www.anthropic.com/legal/privacy", label: "Anthropic 개인정보 처리방침" },
   },
   {
+    to: "Upstash(미국 회사, 저장 위치는 일본 도쿄)",
+    what: "로그인한 사람의 아이디, 비밀번호를 되돌릴 수 없게 바꾼 값, 가입·저장 시각, 로그인 실패 횟수, 내 정보(부를 이름·내 차·위치·자주 가는 곳·할인과 뺀 상표), 주유 기록과 주유 장부, 알림 조건, 예보 설정. 로그인하지 않으면 보내지 않아요.",
+    why: "계정 저장(로그인하면 어느 기기에서나 같은 정보가 보이게). 탈퇴하면 바로, 1년 동안 쓰지 않으면 저절로 지워요.",
+    link: { href: "https://upstash.com/trust/privacy.pdf", label: "Upstash 개인정보 처리방침" },
+  },
+  {
     to: "Vercel(미국)",
     what: "이 서비스로 오가는 모든 요청과 접속 정보(근처 주유소나 출퇴근 길을 찾을 때는 줄인 위치 좌표와 위치 이름이 요청 주소에 들어가요. 집·회사도 같아요)",
     why: "서비스 호스팅(서버 실행과 접속 기록)",
@@ -80,8 +93,9 @@ export default function PrivacyPage() {
     <article className="mx-auto w-full max-w-xl pt-6 pb-10">
       <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">개인정보 처리방침</h1>
       <p className="mt-2 text-ink-soft">
-        기름알리미(운영: {OPERATOR})는 회원 가입 없이 쓰는 서비스예요. 내 정보와 기록은 서버가 아니라 지금 쓰는 브라우저에
-        저장해요. 무엇을 어디에 두고 어디로 보내는지 아래에 적었어요.
+        기름알리미(운영: {OPERATOR})는 가입하지 않아도 모두 쓸 수 있어요. 로그인하지 않으면 내 정보와 기록을 지금 쓰는
+        브라우저에만 저장해요. 아이디로 로그인하면 다른 기기에서도 같게 보이도록 계정 서버에도 저장해요. 무엇을 어디에 두고
+        어디로 보내는지 아래에 적었어요.
       </p>
 
       <Section title="처리하는 정보와 쓰는 곳">
@@ -95,19 +109,26 @@ export default function PrivacyPage() {
           ))}
         </ul>
         <p className="text-sm text-ink-soft">
-          이름, 위치, 차는 넣지 않아도 돼요. 넣지 않으면 그 정보가 필요한 기능만 쓸 수 없어요.
+          계정, 이름, 위치, 차는 만들거나 넣지 않아도 돼요. 넣지 않으면 그 정보가 필요한 기능만 쓸 수 없어요.
         </p>
       </Section>
 
       <Section title="저장하는 곳과 기간">
         <p>
-          부를 이름, 내 차, 위치, 주유 기록, 알림 조건은 이 브라우저의 저장소(localStorage)에만 있어요. 서버에는 이 정보를
-          저장하는 데이터베이스가 없어요. 직접 지우거나 브라우저의 사이트 데이터를 지울 때까지 남아요.
+          부를 이름, 내 차, 위치, 주유 기록, 알림 조건은 이 브라우저의 저장소(localStorage)에 있어요. 로그인하지 않았으면
+          여기에만 있고, 직접 지우거나 브라우저의 사이트 데이터를 지울 때까지 남아요.
+        </p>
+        <p>
+          아이디로 로그인하면 같은 정보(내 정보와 위치·자주 가는 곳, 최근 주유 기록, 주유 장부, 알림 조건, 예보 설정)를 위의
+          계정 정보와 함께 Upstash의 데이터베이스(일본 도쿄)에도 저장해요. 탈퇴하면 바로 지우고, 1년 동안 한 번도 쓰지 않으면
+          저절로 지워요. 우리가 따로 두는 백업은 없어요. 로그인한 상태는 서명한 쿠키(kireumalimi_session)에 아이디와 가입
+          시각만 담아 30일 동안 둬요.
         </p>
         <p className="text-sm text-ink-soft">
           저장 이름: kireumalimi.profile(내 정보·위치), kireumalimi.ledger와 kireumalimi.fills(주유 기록),
           kireumalimi.alerts와 kireumalimi.watch(알림 조건·예보 설정), kireumalimi.vsArea(지역 평균과 견준 결과),
-          kireumalimi.areaPrice(오늘의 내 지역 평균가)
+          kireumalimi.areaPrice(오늘의 내 지역 평균가), kireumalimi.sync(로그인했을 때 어느 계정의 사본인지와 아직 계정에
+          못 올린 칸)
         </p>
         <p>
           서버는 호출 한도를 지키려고 IP 주소별 요청 시각을 서버 메모리에 둬요. 하루가 지난 시각은 세지 않고, 쌓인 기록이
@@ -147,12 +168,21 @@ export default function PrivacyPage() {
             &lsquo;고른 위치 지우기&rsquo;
           </li>
           <li>
-            부를 이름, 내 차, 위치: <Link href="/login" className="underline underline-offset-4">내 정보</Link>에서 로그아웃
+            부를 이름, 내 차, 위치(로그인하지 않았을 때):{" "}
+            <Link href="/login" className="underline underline-offset-4">내 정보</Link>에서 &lsquo;이 브라우저의 내 정보 지우기&rsquo;
           </li>
           <li>
             알림 조건: <Link href="/alerts" className="underline underline-offset-4">알림</Link> 화면에서 하나씩 삭제
           </li>
-          <li>모두 지우기: 브라우저 설정에서 이 사이트의 데이터(쿠키 및 사이트 데이터) 삭제. 주유 기록도 이렇게 지워요.</li>
+          <li>
+            이 브라우저에서 모두 지우기: 브라우저 설정에서 이 사이트의 데이터(쿠키 및 사이트 데이터) 삭제. 주유 기록도 이렇게
+            지워요. 계정에 저장한 것은 남아요.
+          </li>
+          <li>
+            로그인했을 때: 내 정보의 &lsquo;로그아웃&rsquo;은 이 브라우저에서 내 정보와 기록을 지워요(계정에는 남아요). 계정에
+            저장한 것까지 모두 지우려면 내 정보 맨 아래 &lsquo;회원 탈퇴&rsquo;를 눌러요. 바로 지우고 되돌릴 수 없어요. 로그인해
+            둔 다른 기기의 사본은 그 기기를 다음에 열 때 지워요.
+          </li>
         </ul>
       </Section>
 
