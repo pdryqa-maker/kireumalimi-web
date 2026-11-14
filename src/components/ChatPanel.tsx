@@ -1118,7 +1118,7 @@ export default function ChatPanel({
           }
           if ("stations" in message) {
             return (
-              <div key={index} className="max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised">
+              <div key={index} className={`${message.map ? "w-full " : ""}max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised`}>
                 {message.map && (
                   <StationMiniMap data={message.map} title={message.title} live={index === lastMapIndex} onPick={pickStation(message.map.points)} />
                 )}
@@ -1203,7 +1203,7 @@ export default function ChatPanel({
           if ("detail" in message) {
             const { detail } = message;
             return (
-              <div key={index} className="max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised">
+              <div key={index} className={`${message.map ? "w-full " : ""}max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised`}>
                 {message.map && <StationMiniMap data={message.map} title={detail.name} live={index === lastMapIndex} />}
                 <h2 className="font-semibold">
                   {detail.name} <span className="text-sm font-normal text-ink-soft">{detail.brand}</span>

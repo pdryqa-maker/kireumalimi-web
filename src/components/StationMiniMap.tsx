@@ -1,6 +1,6 @@
 "use client";
 
-// 챗봇 답 위의 작은 지도: 답에 나온 주유소를 가격 표시로 찍는다. 오른쪽 아래 단추로 크게 펼친다.
+// 챗봇 답 위의 지도: 답에 나온 주유소를 가격 표시로 찍는다. 답 안에서도 +/− 단추와 두 손가락(Ctrl+휠)으로 확대하고, 오른쪽 위 단추로 전체 화면으로 펼친다.
 // 대화가 길어지면 지도(WebGL)가 쌓여 느려지므로, 마지막 지도 답만 바로 그리고 앞의 답은 '지도 보기' 단추로 둔다(live).
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -13,14 +13,21 @@ export type MiniMapData = {
   points: { id: string; name: string; brand: string; price: number | null; lat: number; lon: number }[];
 };
 
+// 답 안의 지도는 화면 넘기기를 막지 않게 한다: 휴대폰은 두 손가락, 컴퓨터는 Ctrl(⌘)+휠로만 지도를 움직인다.
+const INLINE_LOCALE = {
+  "CooperativeGesturesHandler.WindowsHelpText": "Ctrl을 누른 채 휠을 굴리면 지도가 커지고 작아져요",
+  "CooperativeGesturesHandler.MacHelpText": "⌘를 누른 채 휠을 굴리면 지도가 커지고 작아져요",
+  "CooperativeGesturesHandler.MobileHelpText": "두 손가락으로 지도를 움직이거나 벌려 보세요",
+};
+
 function MapCanvas({
   data,
-  interactive,
+  inline,
   onPick,
   className,
 }: {
   data: MiniMapData;
-  interactive: boolean;
+  inline: boolean;
   onPick?: (id: string) => void;
   className: string;
 }) {
@@ -45,15 +52,14 @@ function MapCanvas({
         style: STYLE_URL,
         center: [first.lon, first.lat],
         zoom: 14,
-        interactive,
         attributionControl: { compact: true },
         dragRotate: false,
         pitchWithRotate: false,
+        cooperativeGestures: inline,
+        ...(inline ? { locale: INLINE_LOCALE } : {}),
       });
-      if (interactive) {
-        map.touchZoomRotate.disableRotation();
-        map.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
-      }
+      map.touchZoomRotate.disableRotation();
+      map.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
       const created = map;
       created.on("load", () => tidyBaseMap(created));
 
@@ -80,14 +86,15 @@ function MapCanvas({
       if (all.length > 1) {
         const bounds = new LngLatBounds([all[0].lon, all[0].lat], [all[0].lon, all[0].lat]);
         for (const item of all) bounds.extend([item.lon, item.lat]);
-        created.fitBounds(bounds, { padding: { top: 40, bottom: 40, left: 48, right: 48 }, maxZoom: 15, duration: 0 });
+        // 가격 표시 높이만큼 위아래를, 오른쪽은 확대 단추 자리만큼 비운다.
+        created.fitBounds(bounds, { padding: { top: 36, bottom: 28, left: 40, right: 56 }, maxZoom: 15, duration: 0 });
       }
     })();
     return () => {
       cancelled = true;
       map?.remove();
     };
-  }, [data, interactive, pickable]);
+  }, [data, inline, pickable]);
 
   return <div ref={ref} className={className} />;
 }
@@ -131,13 +138,13 @@ export function StationMiniMap({
   return (
     <>
       {live ? (
-        <div className="relative mb-3 h-44 overflow-hidden rounded-2xl shadow-inset-sm">
-          <MapCanvas data={data} interactive={false} onPick={onPick} className="h-full w-full" />
+        <div className="relative mb-3 h-64 overflow-hidden rounded-2xl shadow-inset-sm sm:h-80">
+          <MapCanvas data={data} inline onPick={onPick} className="h-full w-full" />
           <button
             type="button"
             onClick={() => setOpen(true)}
             aria-label={`${title} 지도 크게 보기`}
-            className="absolute right-2.5 bottom-2.5 z-10 grid size-9 place-items-center rounded-full bg-ground shadow-raised"
+            className="absolute top-2.5 right-2.5 z-10 grid size-9 place-items-center rounded-full bg-ground shadow-raised"
           >
             <ExpandIcon />
           </button>
@@ -166,7 +173,7 @@ export function StationMiniMap({
               닫기
             </button>
           </div>
-          <MapCanvas data={data} interactive onPick={pickAndClose} className="min-h-0 flex-1" />
+          <MapCanvas data={data} inline={false} onPick={pickAndClose} className="min-h-0 flex-1" />
           <p className="border-t border-hairline px-4 py-2.5 text-xs text-ink-soft">
             검은 표시가 1위예요.{onPick ? " 가격 표시를 누르면 그 주유소를 자세히 알려 드려요." : ""} 거리는 직선거리예요.
           </p>

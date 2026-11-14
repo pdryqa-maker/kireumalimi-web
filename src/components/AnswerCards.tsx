@@ -69,7 +69,7 @@ export function CostCard({
 }) {
   const { cheapest } = cost;
   return (
-    <div className={CARD}>
+    <div className={`${map ? "w-full " : ""}${CARD}`}>
       {map}
       <CardHead title={`${cost.place} 출발 · ${cost.fuel} ${cost.fill.label} 실질비용`} fetchedAt={cost.fetchedAt} />
       <p className="mt-1 text-xs text-ink-soft">
