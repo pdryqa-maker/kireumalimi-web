@@ -1,15 +1,16 @@
 "use client";
 
-// 탐색 대시보드: 맨 위 조건 줄과 지금 있는 탐색 기능 7개를 상자로 보여 준다. 상자를 누르면 결과 패널에서 그 기능이 실행된다.
+// 탐색 대시보드: 맨 위 조건 줄과 지금 있는 탐색 기능 8개를 상자로 보여 준다. 상자를 누르면 결과 패널에서 그 기능이 실행된다.
 // 열 때는 아무것도 조회하지 않는다(오피넷 하루 한도). 누를 때만 조회한다.
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { amountName, type Amount } from "@/lib/fillAmount";
-import { fuelName } from "@/lib/profile";
+import { fuelName, signedIn } from "@/lib/profile";
 import { ledgerStore, parseLedger } from "@/lib/savedLedger";
 import ChatPanel, { type PanelCommand, type PanelHandle } from "./ChatPanel";
 import { ConditionBar, initialPlace, placeLabel, usablePlace } from "./ConditionBar";
 import { DashboardPanel, usePanelState } from "./DashboardPanel";
-import { CarIcon, DropIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
+import { CarIcon, DropIcon, HomeIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 type Region = { key: string; area: string; name: string };
@@ -19,7 +20,7 @@ type Box = {
   description: string;
   ai: boolean;
   Icon: (props: { className?: string }) => React.ReactNode;
-  info: string | null; // 이 상자가 실제로 쓰는 조건
+  info: React.ReactNode; // 이 상자가 실제로 쓰는 조건(없으면 null)
   field?: { label: string; value: string; onChange: (value: string) => void; placeholder: string; empty: string };
   action: string;
   command: PanelCommand | null; // null이면 이름 칸이 비어 실행할 수 없다
@@ -129,6 +130,26 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
       command: { kind: "totalCost" },
     },
     {
+      key: "commute",
+      name: "출퇴근 길",
+      description: "집과 회사 사이에서 덜 드는 곳",
+      ai: false,
+      Icon: HomeIcon,
+      info:
+        mounted && profile.home && profile.work ? (
+          `${fuelText} · 집 ${profile.home.label} ↔ 회사 ${profile.work.label} · 직선거리`
+        ) : (
+          <>
+            내 정보에서 집과 회사를 저장하면 쓸 수 있어요.{" "}
+            <Link href="/login" className="font-semibold underline underline-offset-4">
+              내 정보 열기
+            </Link>
+          </>
+        ),
+      action: "보기",
+      command: mounted && profile.home && profile.work ? { kind: "commute" } : null,
+    },
+    {
       key: "trust",
       name: "주유소 점검",
       description: "공개 정보와 내 영수증을 맞춰 믿을 만한지 살펴봐요",
@@ -203,6 +224,10 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
     },
   ];
 
+  // 로그인했는데 요소수가 필요 없는 차(경유가 아니거나 요소수 필요 없음)면 요소수 상자를 맨 뒤로 보낸다.
+  const ureaLast = mounted && signedIn(profile) && !(profile.fuel === "경유" && profile.ureaNeeded);
+  const shown = ureaLast ? [...boxes.filter((box) => box.key !== "urea"), ...boxes.filter((box) => box.key === "urea")] : boxes;
+
   return (
     <div data-wide="" className="grid gap-x-6 pb-6 lg:grid-cols-[minmax(0,1fr)_25rem]">
       <div className="min-w-0 pt-6">
@@ -214,7 +239,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
           <ConditionBar fuel={fuel} place={place} amount={amount} onFuel={setFuel} onPlace={setPlace} onAmount={setAmount} />
         </div>
         <ul className="mt-5 grid gap-4 sm:grid-cols-2">
-          {boxes.map((box) => (
+          {shown.map((box) => (
             <FeatureBox key={box.key} box={box} locked={busy} onRun={runBox} />
           ))}
         </ul>

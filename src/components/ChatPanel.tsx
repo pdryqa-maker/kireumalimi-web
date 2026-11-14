@@ -9,9 +9,10 @@ import { amountName, amountQuery, fullLiters, wonName, type Amount } from "@/lib
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
 import { favoriteStation, fillPlan, monthProjection, planLiters } from "@/lib/personal";
+import { prefsQuery } from "@/lib/discounts";
 import { DEFAULT_PLACE } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
-import { fuelName, saveProfile, signedIn, type Profile } from "@/lib/profile";
+import { fuelName, prefsOf, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
 import { addLedgerEntry, ledgerForMonth, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger } from "@/lib/savedLedger";
@@ -21,7 +22,10 @@ import {
   AlertCheckCard,
   CapCard,
   capMessage,
+  CommuteCard,
   CostCard,
+  discountLine,
+  excludedNote,
   DashboardCard,
   FillProposalCard,
   fuelLabel,
@@ -29,6 +33,7 @@ import {
   type AlertCheck,
   type AlertStatus,
   type CapNotice,
+  type CommuteResult,
   type CostResult,
   type CostStation,
   type FillMark,
@@ -59,7 +64,17 @@ const MAX_TURN_LENGTH = 500;
 let alertSeq = 0;
 
 type Region = { key: string; area: string; name: string };
-type Station = { id: string; name: string; brand: string; price: number; address?: string; distanceKm?: number };
+// paidPrice·discountWon은 내 할인을 뺀 가격과 할인액(근처·지역 최저가). 할인이 없으면 paidPrice가 price와 같다.
+type Station = {
+  id: string;
+  name: string;
+  brand: string;
+  price: number;
+  discountWon?: number;
+  paidPrice?: number;
+  address?: string;
+  distanceKm?: number;
+};
 type StationDetail = {
   name: string;
   brand: string;
@@ -84,9 +99,10 @@ type SkeletonKind = "list" | "detail" | "text";
 type Reply =
   | { from: "bot"; text: string; check?: Check }
   | { from: "bot"; summary: string; notice: { text: string; figures: NoticeFigures } }
-  | { from: "bot"; summary: string; title: string; fetchedAt: string; stations: Station[] }
+  | { from: "bot"; summary: string; title: string; fetchedAt: string; stations: Station[]; excludedCount?: number }
   | { from: "bot"; summary: string; detail: StationDetail }
   | { from: "bot"; summary: string; cost: CostResult }
+  | { from: "bot"; summary: string; commute: CommuteResult }
   | { from: "bot"; summary: string; tax: TaxImpact; taxCost: CostResult | null }
   | { from: "bot"; summary: string; alert: AlertProposal; status: AlertStatus; id: number }
   | { from: "bot"; summary: string; alertCheck: AlertCheck }
@@ -126,14 +142,29 @@ async function getJson(url: string, init?: RequestInit) {
   }
 }
 
-const listSummary = (stations: { name: string; price: number }[]) =>
-  stations.map((station, rank) => `${rank + 1}. ${station.name} ${won(station.price)}원`).join(", ");
+// AI에 넘기는 요약에도 할인 반영 가격과 오피넷 가격을 함께 적는다.
+const priceText = (station: { price: number; paidPrice?: number; discountWon?: number }) =>
+  station.discountWon ? `${won(station.paidPrice ?? station.price)}원(오피넷 ${won(station.price)}원, 할인 ${won(station.discountWon)}원)` : `${won(station.price)}원`;
+const excludedText = (excludedCount?: number) => (excludedCount ? ` 뺀 상표 ${excludedCount}곳 제외.` : "");
+
+const listSummary = (stations: { name: string; price: number; paidPrice?: number; discountWon?: number }[]) =>
+  stations.map((station, rank) => `${rank + 1}. ${station.name} ${priceText(station)}`).join(", ");
 
 function costSummary(cost: CostResult) {
   const rows = cost.stations
-    .map((s, rank) => `${rank + 1}. ${s.name} 리터당 ${won(s.price)}원, 직선 ${s.distanceKm}km, 총 ${won(s.totalWon)}원`)
+    .map((s, rank) => `${rank + 1}. ${s.name} 리터당 ${priceText(s)}, 직선 ${s.distanceKm}km, 총 ${won(s.totalWon)}원`)
     .join("; ");
-  return `${cost.place} 출발 ${cost.fuel} ${cost.fill.label} 실질비용 순(연비 ${cost.kmpl}km/L, 직선 왕복, ${koreanTime(cost.fetchedAt)} 조회): ${rows}`;
+  return `${cost.place} 출발 ${cost.fuel} ${cost.fill.label} 실질비용 순(연비 ${cost.kmpl}km/L, 직선 왕복, ${koreanTime(cost.fetchedAt)} 조회): ${rows}.${excludedText(cost.excludedCount)}`;
+}
+
+function commuteSummary(commute: CommuteResult) {
+  const rows =
+    commute.overlap.length > 0
+      ? commute.overlap.map((s, rank) => `${rank + 1}. ${s.name} 리터당 ${priceText(s)}, 집 ${s.homeKm}km + 회사 ${s.workKm}km`).join("; ")
+      : [commute.nearHome && `집 근처 ${commute.nearHome.name} ${priceText(commute.nearHome)}`, commute.nearWork && `회사 근처 ${commute.nearWork.name} ${priceText(commute.nearWork)}`]
+          .filter(Boolean)
+          .join("; ") || "없음";
+  return `출퇴근 길(집 ${commute.home} ↔ 회사 ${commute.work}, ${commute.fuel}, 직선거리, ${koreanTime(commute.fetchedAt)} 조회): ${rows}.${excludedText(commute.excludedCount)}`;
 }
 
 function taxSummary(tax: TaxImpact, cost: CostResult | null) {
@@ -327,6 +358,7 @@ function SuggestionRow({ suggestions, busy }: { suggestions: Starter[]; busy: bo
 export type PanelCommand =
   | { kind: "nearby" }
   | { kind: "totalCost" }
+  | { kind: "commute" }
   | { kind: "ask"; question: string }
   | { kind: "photo"; question: string }
   | { kind: "report"; month: string }
@@ -391,6 +423,8 @@ export default function ChatPanel({
   const place = usablePlace(conditions?.place ?? placeChoice ?? initialPlace(profile), profile);
   const placeName = placeLabel(place, profile);
   const homeArea = profile.area ?? { code: region.area, name: region.name };
+  // 내 할인과 뺀 상표(내 정보). 근처·지역 최저가와 거리까지 고려한 추천, 출퇴근 길 조회에 붙인다. 가격 알림 확인은 오피넷 가격 그대로.
+  const prefs = prefsQuery(prefsOf(profile));
   const loggedIn = mounted && signedIn(profile);
   // 제도 금액 질문의 말: "5만원어치 넣는 데", "가득 넣는 데"
   const amountPhrase = (chosen: Amount) => `${chosen === "full" ? "가득" : amountName(chosen)} 넣는 데`;
@@ -454,12 +488,17 @@ export default function ChatPanel({
     const question = origin ? `${placeLabel(origin, profile)} 근처 제일 싼 ${fuelName(chosen)} 어디야?` : cheapestQuestion;
     ask(question, "list", async () => {
       const url = near
-        ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(near) })}`
-        : `/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: homeArea.code })}`;
+        ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(near), ...prefs })}`
+        : `/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: homeArea.code, ...prefs })}`;
       const { ok, body } = await getJson(url);
       if (!ok || !body) return body?.error ? { from: "bot", text: body.error } : null;
       if (body.stations.length === 0) {
-        return { from: "bot", text: near ? `${body.place} 반경 ${body.radiusKm}km 안에서 가격을 알린 주유소가 없어요.` : "조회된 주유소가 없어요." };
+        return {
+          from: "bot",
+          text:
+            excludedNote(body.excludedCount, true, near ? body.radiusKm : undefined) ??
+            (near ? `${body.place} 반경 ${body.radiusKm}km 안에서 가격을 알린 주유소가 없어요.` : "조회된 주유소가 없어요."),
+        };
       }
       const title = near ? `${body.place} 반경 ${body.radiusKm}km ${fuelName(chosen)} 최저가` : `${body.area} ${fuelName(chosen)} 최저가`;
       return {
@@ -467,7 +506,8 @@ export default function ChatPanel({
         title,
         fetchedAt: body.fetchedAt,
         stations: body.stations,
-        summary: `${title}(${koreanTime(body.fetchedAt)} 조회): ${listSummary(body.stations)}`,
+        excludedCount: body.excludedCount,
+        summary: `${title}(${koreanTime(body.fetchedAt)} 조회): ${listSummary(body.stations)}.${excludedText(body.excludedCount)}`,
       };
     });
   };
@@ -490,13 +530,47 @@ export default function ChatPanel({
         ...originQuery(chosenPlace),
         ...amountQuery(chosenAmount, fullTank),
         kmpl: String(profile.kmpl),
+        ...prefs,
       });
       const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
       if (!ok || !body) return body?.error ? { from: "bot", text: body.error } : null;
       if (body.stations.length === 0) {
-        return { from: "bot", text: `${body.place} 반경 ${body.radiusKm}km 안에서 ${chosenFuel} 가격을 알린 주유소가 없어요.` };
+        return {
+          from: "bot",
+          text:
+            excludedNote(body.excludedCount, true, body.radiusKm) ??
+            `${body.place} 반경 ${body.radiusKm}km 안에서 ${chosenFuel} 가격을 알린 주유소가 없어요.`,
+        };
       }
       return { from: "bot", cost: body, summary: costSummary(body) };
+    });
+  };
+
+  // 출퇴근 길: 내 정보의 집과 회사 사이에서 덜 드는 곳. 집이나 회사가 없으면 내 정보로 안내한다.
+  const askCommute = () => {
+    const chosenFuel = fuel;
+    const { home, work } = profile;
+    if (!home || !work) {
+      ask(`출퇴근 길에 ${fuelName(chosenFuel)} 어디서 넣을까?`, "text", async () => ({
+        from: "bot",
+        text: "내 정보에서 집과 회사를 저장하면 두 곳 사이에서 덜 드는 주유소를 찾아 드려요.",
+      }));
+      return;
+    }
+    ask(`집(${home.label})과 회사(${work.label}) 사이에서 ${fuelName(chosenFuel)} 어디가 덜 들어?`, "list", async () => {
+      const query = new URLSearchParams({
+        fuel: chosenFuel,
+        hx: String(home.x),
+        hy: String(home.y),
+        hlabel: home.label,
+        wx: String(work.x),
+        wy: String(work.y),
+        wlabel: work.label,
+        ...prefs,
+      });
+      const { ok, body } = await getJson(`/api/stations/commute?${query}`);
+      if (!ok || !body?.overlap) return body?.error ? { from: "bot", text: body.error } : null;
+      return { from: "bot", commute: body, summary: commuteSummary(body) };
     });
   };
 
@@ -575,6 +649,7 @@ export default function ChatPanel({
         ...originQuery(chosenPlace),
         ...typical,
         kmpl: String(profile.kmpl),
+        ...prefs,
       });
       // 추천은 오피넷이 안 될 때 빼고 보여 준다. 예상일은 기록만으로 셈한 값이라 그대로 쓸 수 있다.
       const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
@@ -785,6 +860,7 @@ export default function ChatPanel({
       setDraft("");
       if (command.kind === "nearby") askCheapest(place);
       else if (command.kind === "totalCost") askTotalCost();
+      else if (command.kind === "commute") askCommute();
       else if (command.kind === "ask") askFree(command.question, undefined, true);
       else if (command.kind === "report") askReport(command.month);
       else if (command.kind === "fillForm") askForecast();
@@ -919,6 +995,9 @@ export default function ChatPanel({
           if ("cost" in message) {
             return <CostCard key={index} cost={message.cost} busy={busy} onDetail={(station: CostStation) => askDetail(station)} />;
           }
+          if ("commute" in message) {
+            return <CommuteCard key={index} commute={message.commute} />;
+          }
           if ("alertCheck" in message) {
             return <AlertCheckCard key={index} check={message.alertCheck} />;
           }
@@ -978,7 +1057,7 @@ export default function ChatPanel({
                         type="button"
                         onClick={() => askDetail(station)}
                         disabled={busy}
-                        aria-label={`${station.name} ${won(station.price)}원, 자세히 보기`}
+                        aria-label={`${station.name} ${won(station.paidPrice ?? station.price)}원${station.discountWon ? "(할인 반영)" : ""}, 자세히 보기`}
                         className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-2xl px-2 py-3 text-left transition-shadow hover:shadow-inset-sm active:shadow-inset disabled:cursor-default disabled:hover:shadow-none"
                       >
                         <span className="w-4 shrink-0 text-sm text-ink-soft tabular-nums">{rank + 1}</span>
@@ -989,10 +1068,11 @@ export default function ChatPanel({
                           <span className="block truncate text-xs text-ink-soft">
                             {station.address || (station.distanceKm !== undefined ? `직선 ${station.distanceKm}km` : "")}
                           </span>
+                          {discountLine(station) && <span className="block text-xs text-ink-soft tabular-nums">{discountLine(station)}</span>}
                         </span>
                         <span className="shrink-0 text-right">
                           <span className="block text-xl font-bold tabular-nums">
-                            {won(station.price)}
+                            {won(station.paidPrice ?? station.price)}
                             <span className="ml-0.5 text-sm font-medium">원</span>
                           </span>
                           <span className="block text-xs font-medium text-ink-soft">자세히</span>
@@ -1001,6 +1081,7 @@ export default function ChatPanel({
                     </li>
                   ))}
                 </ol>
+                {excludedNote(message.excludedCount, false) && <p className="mt-2 text-sm">{excludedNote(message.excludedCount, false)}</p>}
                 <p className="mt-3 text-xs text-ink-soft">
                   {PUMP_NOTE} 가격별 기준 시각은 자세히에서 볼 수 있어요.
                 </p>
