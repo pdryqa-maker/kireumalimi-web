@@ -902,6 +902,10 @@ export default function ChatPanel({
   // 오늘의 기름 소식은 홈에서만 받는다(오피넷 하루 한도).
   const briefing = useBriefing(fuel, homeArea.code, mounted && !isPanel);
   const headline = mounted ? (newsHeadline(today, fuel, briefing?.data ?? null) ?? greeting(kstClock().hour)) : "안녕하세요";
+  // 대화 전 홈은 페이지 전체가 내려가고 입력창만 아래에 붙는다. 가운데 상자 안에서만 내려가면
+  // 양옆 빈 곳에서 휠을 굴려도 움직이지 않고, 노트북 높이에서 아래 내용이 잘려 보인다.
+  // 대화가 시작되면 지금처럼 대화 목록만 내려간다(새 답이 입력창 위에 오도록).
+  const homeStart = !isPanel && messages.length === 0 && !busy;
 
   return (
     <section
@@ -910,10 +914,16 @@ export default function ChatPanel({
       className={
         isPanel
           ? "flex h-full min-h-0 flex-col"
-          : "flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]"
+          : homeStart
+            ? "flex min-h-[calc(100dvh-3.5rem)] flex-col"
+            : "flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]"
       }
     >
-      <div ref={listRef} aria-live="polite" className={`flex flex-1 flex-col gap-5 overflow-y-auto pb-4 ${isPanel ? "pt-1" : "pt-4"}`}>
+      <div
+        ref={listRef}
+        aria-live="polite"
+        className={`flex flex-1 flex-col gap-5 pb-4 ${homeStart ? "" : "overflow-y-auto"} ${isPanel ? "pt-1" : "pt-4"}`}
+      >
         {messages.length === 0 && !busy && isPanel && (
           <div className="my-auto py-6">
             <p className="text-[15px] font-semibold">이 탭에서 궁금한 것 물어보기</p>
@@ -948,6 +958,14 @@ export default function ChatPanel({
               </h1>
             </div>
 
+            <div className="mt-3">
+              <StarterList cards={cards} chips={chips}>
+                <Link href="/alerts" className="rounded-full px-3.5 py-2 text-sm text-ink-soft shadow-raised-sm hover:bg-canvas">
+                  알림 조건 걸기
+                </Link>
+              </StarterList>
+            </div>
+
             {mounted && <FuelNews today={today} fuel={fuel} state={briefing} notice={loggedIn ? nextNotice(profile) : null} />}
             {mounted && !loggedIn && (
               <p className="mt-3 text-center text-sm text-ink-soft">
@@ -957,12 +975,6 @@ export default function ChatPanel({
                 </Link>
               </p>
             )}
-
-            <StarterList cards={cards} chips={chips}>
-              <Link href="/alerts" className="rounded-full px-3.5 py-2 text-sm text-ink-soft shadow-raised-sm hover:bg-canvas">
-                알림 조건 걸기
-              </Link>
-            </StarterList>
           </div>
         )}
 
@@ -1184,7 +1196,7 @@ export default function ChatPanel({
         <div ref={endRef} />
       </div>
 
-      <div className="space-y-3 pt-2 pb-3">
+      <div className={homeStart ? "sticky bottom-0 z-10 space-y-3 bg-ground pt-2 pb-24 lg:pb-3" : "space-y-3 pt-2 pb-3"}>
         {!isPanel && (
           <ConditionBar fuel={fuel} place={place} amount={amount} onFuel={setFuel} onPlace={setPlace} onAmount={setAmount} />
         )}
