@@ -23,16 +23,14 @@ import { placeAt, placeGroups } from "@/lib/places";
 import {
   cleanText,
   fuelName,
-  GUEST,
   LIMITS,
   PROFILE_FUELS,
-  profileStore,
   saveProfile,
   signedIn,
   type MyPlace,
   type Profile,
 } from "@/lib/profile";
-import type { AccountState } from "@/lib/accountSync";
+import { clearBrowserProfile, type AccountState } from "@/lib/accountSync";
 import AccountPanel from "./AccountPanel";
 import { loadAreas, type Area } from "./areaApi";
 import { CameraIcon, LocateIcon } from "./icons";
@@ -548,7 +546,7 @@ function ProfileForm({ account }: { account: AccountState }) {
   }
 
   function signOut() {
-    profileStore.write(GUEST);
+    clearBrowserProfile();
     setDraft(null);
     router.push("/");
   }

@@ -1,10 +1,10 @@
 // 브라우저 ↔ 계정 동기화. 화면은 지금처럼 브라우저 저장소를 읽고 쓰고, 여기서 다섯 저장소의 바뀜(`{키}:change`)을 들어 계정에 올린다.
-// kireumalimi.sync에 { tag, dirty }를 둔다. tag는 이 브라우저의 사본이 어느 계정 것인지, dirty는 아직 못 올린 칸이다.
+// kireumalimi.sync에 { tag, dirty }를 둔다. tag는 이 브라우저의 사본이 어느 계정 것인지, dirty는 아직 못 올린 칸이다(탭끼리 함께 쓴다).
 // 열 때와 창을 다시 볼 때(1분에 한 번까지) 계정을 받는다. 자세한 규칙은 docs/superpowers/specs/2026-11-14-account-login-design.md '동기화'.
 import { STORE_KEYS, SYNC_FIELDS, type AccountData, type SyncField } from "./account/fields";
-import { mergeAccount } from "./account/merge";
+import { joinLedger, mergeAccount } from "./account/merge";
 import { browserStore } from "./browserStore";
-import { parseProfile, profileStore } from "./profile";
+import { GUEST, parseProfile, profileStore } from "./profile";
 import { alertStore, parseAlerts } from "./savedAlerts";
 import { fillStore, parseFills } from "./savedFills";
 import { ledgerStore, parseLedger } from "./savedLedger";
@@ -112,14 +112,24 @@ function clearLocal() {
 let fetchImpl: typeof fetch = (...args) => fetch(...args);
 let debounceMs = 1_500;
 
-async function api(method: string, path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> } | null> {
+// keepalive: 창을 닫아도 요청을 끝까지 보낸다. 브라우저가 64KB까지만 받아 주므로 그보다 작을 때만 쓴다.
+const KEEPALIVE_MAX = 60_000;
+
+async function api(
+  method: string,
+  path: string,
+  body?: unknown,
+  { keepalive = false }: { keepalive?: boolean } = {},
+): Promise<{ status: number; body: Record<string, unknown> } | null> {
   try {
+    const text = body === undefined ? undefined : JSON.stringify(body);
     const response = await fetchImpl(path, {
       method,
-      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: text === undefined ? undefined : { "Content-Type": "application/json" },
+      body: text,
       cache: "no-store",
       credentials: "same-origin",
+      keepalive: keepalive && (text?.length ?? 0) < KEEPALIVE_MAX,
     });
     const json = await response.json().catch(() => null);
     return { status: response.status, body: json && typeof json === "object" ? json : {} };
@@ -139,8 +149,6 @@ function queue<T>(task: () => Promise<T>): Promise<T> {
 // ── 올리기 ──────────────────────────────────────────────
 
 let timer: ReturnType<typeof setTimeout> | null = null;
-let pushing = false;
-const editedDuringPush = new Set<SyncField>();
 
 function cancelPush() {
   if (timer) clearTimeout(timer);
@@ -158,7 +166,6 @@ function schedulePush() {
 
 function onLocalChange(field: SyncField) {
   if (applying) return;
-  if (pushing) editedDuringPush.add(field);
   const sync = readSync();
   if (!sync.tag) return; // 게스트로 쓰는 브라우저는 셀 것이 없다(처음 로그인할 때 통째로 합친다)
   if (!sync.dirty.includes(field)) writeSync({ ...sync, dirty: [...sync.dirty, field] });
@@ -181,24 +188,30 @@ function accountGone() {
   setState({ status: "guest", id: "" });
 }
 
+// 올리는 사이 이 탭이나 같은 브라우저의 다른 탭에서 다시 바뀐 칸. 저장소의 지금 값을 보낸 값과 견준다
+const changedSince = (sent: AccountData) => {
+  const local = readLocal();
+  return (Object.keys(sent) as SyncField[]).filter((field) => JSON.stringify(local[field]) !== JSON.stringify(sent[field]));
+};
+
 // 보낸 칸을 dirty에서 뺀다. 올리는 사이 다시 바뀐 칸은 남겨 한 번 더 올린다.
-function markPushed(tag: string, sent: SyncField[]) {
+function markPushed(tag: string, sent: AccountData) {
   const now = readSync();
-  if (now.tag === tag) writeSync({ ...now, dirty: now.dirty.filter((field) => !sent.includes(field) || editedDuringPush.has(field)) });
-  if (editedDuringPush.size) schedulePush();
+  if (now.tag !== tag) return;
+  const changed = changedSince(sent);
+  const dirty = now.dirty.filter((field) => !(field in sent) || changed.includes(field));
+  writeSync({ ...now, dirty });
+  if (dirty.length) schedulePush();
 }
 
-async function pushDirty(): Promise<boolean> {
+async function pushDirty({ keepalive = false }: { keepalive?: boolean } = {}): Promise<boolean> {
   cancelPush();
   const sync = readSync();
   if (!sync.tag || sync.dirty.length === 0) return true;
   if (state.status !== "account") return false;
   const local = readLocal();
-  const sent = sync.dirty;
-  pushing = true;
-  editedDuringPush.clear();
-  const result = await api("PUT", "/api/account", { tag: sync.tag, data: Object.fromEntries(sent.map((field) => [field, local[field]])) });
-  pushing = false;
+  const sent = Object.fromEntries(sync.dirty.map((field) => [field, local[field]])) as AccountData;
+  const result = await api("PUT", "/api/account", { tag: sync.tag, data: sent }, { keepalive });
   if (result?.status === 200) {
     markPushed(sync.tag, sent);
     return true;
@@ -212,7 +225,7 @@ async function pushDirty(): Promise<boolean> {
   return false;
 }
 
-export const flushAccount = () => queue(pushDirty).catch(() => false);
+export const flushAccount = (opts: { keepalive?: boolean } = {}) => queue(() => pushDirty(opts)).catch(() => false);
 
 // ── 받기와 처음 로그인할 때 합치기 ─────────────────────────────
 
@@ -240,10 +253,15 @@ async function runSync() {
   const sync = readSync();
 
   if (sync.tag === account.tag) {
-    // 같은 계정: 바꾸지 않은 칸은 계정 값으로, 바꾼 칸은 올린다
+    // 같은 계정: 바꾸지 않은 칸은 계정 값으로, 바꾼 칸은 올린다.
+    // 못 올린 장부는 통째로 덮지 않고 계정 장부와 합쳐 올린다. 오래 못 올린 기기가 다른 기기에서 더한 기록을 지우지 않게
     const dirty = new Set(sync.dirty);
     const local = readLocal();
     quietly(() => {
+      if (dirty.has("ledger") && remote.ledger) {
+        const joined = joinLedger(local.ledger, remote.ledger);
+        if (JSON.stringify(joined) !== JSON.stringify(local.ledger)) STORES.ledger.store.write(joined);
+      }
       for (const field of SYNC_FIELDS) {
         if (dirty.has(field) || remote[field] === undefined) continue;
         if (JSON.stringify(local[field]) !== JSON.stringify(remote[field])) STORES[field].store.write(remote[field]);
@@ -259,14 +277,22 @@ async function runSync() {
   if (sync.tag) clearLocal();
   const { merged, addedFills } = mergeAccount(readLocal(), remote);
   writeLocal(merged);
+  const written = readLocal(); // 올리는 사이 바뀐 칸을 가리려고 쓴 직후 값을 둔다
   setState({ status: "account", id: account.id });
-  pushing = true;
-  editedDuringPush.clear();
   const put = await api("PUT", "/api/account", { tag: account.tag, data: merged });
-  pushing = false;
-  if (put?.status !== 200) return; // tag를 저장하지 않으므로 다음에 열 때 다시 합친다(여러 번 해도 결과가 같다)
-  writeSync({ tag: account.tag, dirty: [...editedDuringPush] });
-  if (editedDuringPush.size) schedulePush();
+  if (put?.status !== 200) {
+    // 합친 값을 아직 못 올렸다. 이 계정의 사본으로 표시하고 다섯 칸 모두 못 올린 칸으로 둔다.
+    // 그래야 로그아웃이 '아직 못 올린 기록'을 묻고, 다음에 열 때나 올릴 때 다시 보낸다
+    writeSync({ tag: account.tag, dirty: [...SYNC_FIELDS] });
+    if (put?.status === 401) {
+      if (put.body.deleted === true) accountGone();
+      else sessionEnded();
+    }
+    return;
+  }
+  const changed = changedSince(written);
+  writeSync({ tag: account.tag, dirty: changed });
+  if (changed.length) schedulePush();
   setState({ notice: addedFills > 0 ? NOTICES.merged(addedFills) : NOTICES.signedIn });
 }
 
@@ -296,13 +322,25 @@ export function startAccountSync(opts: { fetch?: typeof fetch; debounceMs?: numb
   readUrlNotice();
   for (const field of SYNC_FIELDS) window.addEventListener(`${STORE_KEYS[field]}:change`, () => onLocalChange(field));
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") void flushAccount(); // 창을 떠날 때 미뤄 둔 올리기를 바로 한다
+    if (document.visibilityState === "hidden") void flushAccount({ keepalive: true }); // 창을 떠날 때 미뤄 둔 올리기를 바로 한다
     else if (Date.now() - lastSync >= 60_000) void syncNow();
   });
   void syncNow();
 }
 
 // ── 로그인·로그아웃·탈퇴 ─────────────────────────────────────
+
+// '이 브라우저의 내 정보 지우기'(게스트, 로그인 기간이 끝난 사람). 이 브라우저에서만 지우고 계정에 올릴 바뀜으로 치지 않는다.
+// 로그인 기간이 끝난 사람이 다시 로그인하면 계정의 내 정보를 그대로 받는다.
+export function clearBrowserProfile() {
+  let saved = false;
+  quietly(() => {
+    saved = profileStore.write(GUEST);
+  });
+  const sync = readSync();
+  if (sync.dirty.includes("profile")) writeSync({ ...sync, dirty: sync.dirty.filter((field) => field !== "profile") });
+  return saved;
+}
 
 const go = (url: string) => location.assign(url);
 
@@ -332,11 +370,15 @@ export async function logoutAccount({ force, navigate = go }: { force: boolean; 
   return { ok: true };
 }
 
-export async function withdrawAccount({ navigate = go }: { navigate?: (url: string) => void } = {}): Promise<{ ok: boolean }> {
-  const result = await api("DELETE", "/api/account");
-  if (result?.status !== 200) return { ok: false };
-  clearLocal();
-  setState({ status: "guest", id: "", notice: null });
-  navigate("/?account=deleted");
-  return { ok: true };
+// 미뤄 둔 올리기는 버리고, 이미 보낸 올리기가 끝난 뒤 지운다. 지운 뒤 도착한 올리기가 계정 칸을 다시 만들지 않게 한다.
+export function withdrawAccount({ navigate = go }: { navigate?: (url: string) => void } = {}): Promise<{ ok: boolean }> {
+  cancelPush();
+  return queue(async () => {
+    const result = await api("DELETE", "/api/account");
+    if (result?.status !== 200) return { ok: false };
+    clearLocal();
+    setState({ status: "guest", id: "", notice: null });
+    navigate("/?account=deleted");
+    return { ok: true };
+  }).catch(() => ({ ok: false }));
 }

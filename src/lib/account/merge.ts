@@ -21,6 +21,11 @@ const byDate = <T extends { date: string }>(local: T[], remote: T[]) => {
   return [...map.values()];
 };
 
+// 아직 못 올린 이 브라우저 장부를 계정 장부와 날짜로 합친다. 같은 날은 이 브라우저 쪽을 쓴다.
+// 장부에는 지우는 기능이 없어(더하거나 같은 날을 바꾸기만 한다) 합쳐도 지운 기록이 되살아나지 않는다.
+export const joinLedger = (local: LedgerEntry[] = [], remote: LedgerEntry[] = []) =>
+  cleanLedger(byDate<LedgerEntry>(remote, local), MAX_SAVED_LEDGER);
+
 const alertKey = (alert: SavedAlert) => `${alert.fuel}|${alert.area}|${alert.belowWon}`;
 
 const recordDates = (data: AccountData) => new Set([...(data.ledger ?? []), ...(data.fills ?? [])].map((item) => item.date));
