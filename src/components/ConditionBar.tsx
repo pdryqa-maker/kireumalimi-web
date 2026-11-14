@@ -3,21 +3,27 @@
 // 조건 줄: 유종, 출발 위치, 한 번에 넣는 금액. 홈 입력창 위와 탐색 대시보드 맨 위에서 함께 쓴다.
 // 바꾼 값은 그 화면에서만 쓰고 저장하지 않는다.
 import { AMOUNT_CHOICES, amountShort, type Amount } from "@/lib/fillAmount";
-import { DEFAULT_PLACE, PLACES } from "@/lib/places";
+import { homePlace, inPlaceMenu, placeAt, placeGroups } from "@/lib/places";
 import { fuelName, PROFILE_FUELS, type Profile } from "@/lib/profile";
 import { useProfile } from "./useStored";
 
 export const MY = "my";
 
-// 처음 출발 위치: 내 위치가 있으면 내 위치, 없으면 언양읍
-export const initialPlace = (profile: Profile) => (profile.location ? MY : DEFAULT_PLACE);
+// 처음 출발 위치: 내 위치가 있으면 내 위치, 없으면 내 지역의 시군구청(지역이 없거나 울주군이면 언양읍)
+export const initialPlace = (profile: Profile) => (profile.location ? MY : homePlace(profile.area));
 
-// 고른 출발 위치가 지금 쓸 수 있는 값인지 맞춘다(내 위치를 지운 뒤 등).
+// 고른 출발 위치가 지금 메뉴에 있는 값인지 맞춘다(내 위치를 지우거나 지역을 바꾼 뒤 등).
 export const usablePlace = (place: string, profile: Profile) =>
-  place === MY ? (profile.location ? MY : DEFAULT_PLACE) : place in PLACES ? place : DEFAULT_PLACE;
+  place === MY
+    ? profile.location
+      ? MY
+      : homePlace(profile.area)
+    : inPlaceMenu(place, profile.area)
+      ? place
+      : homePlace(profile.area);
 
 export const placeLabel = (place: string, profile: Profile) =>
-  place === MY && profile.location ? profile.location.label : (PLACES[place] ?? PLACES[DEFAULT_PLACE]).name;
+  place === MY && profile.location ? profile.location.label : (placeAt(place) ?? placeAt(homePlace(profile.area)))!.name;
 
 // 내 정보 금액이 고르는 칸에 없으면(예: 4만 5천원) 그 값을 끼워 넣는다.
 const amountOptions = (amount: Amount): Amount[] =>
@@ -73,13 +79,15 @@ export function ConditionBar({
       <span className="relative flex shrink-0 items-center">
         <select aria-label="출발 위치" title="출발 위치" value={place} onChange={(event) => onPlace(event.target.value)} className={SELECT}>
           {profile.location && <option value={MY}>{profile.location.label}(내 위치)</option>}
-          <optgroup label="울주군 읍면">
-            {Object.entries(PLACES).map(([key, item]) => (
-              <option key={key} value={key}>
-                {item.name}
-              </option>
-            ))}
-          </optgroup>
+          {placeGroups(profile.area).map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.places.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         <Chevron />
       </span>

@@ -2,7 +2,7 @@
 import { litersFill, type Fill } from "@/lib/fillAmount";
 import { DEFAULT_KMPL } from "@/lib/fuelEconomy";
 import { fetchOpinet, fetchOpinetTimed } from "@/lib/opinet";
-import { PLACES } from "@/lib/places";
+import { placeAt } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
 import type { LedgerEntry } from "@/lib/ledger";
 import { isKatec } from "@/lib/profile";
@@ -303,11 +303,11 @@ export const DEFAULT_LITERS = 40;
 export { DEFAULT_KMPL };
 const RADIUS_M = 5000; // 오피넷 반경 조회의 최대값
 
-// 출발 위치: 울주군 읍면 키(PLACES) 또는 이용자 위치(이름과 KATEC 좌표).
+// 출발 위치: 울주군 읍면 키(PLACES)나 시군구 코드(시군구청, AREA_PLACES), 또는 이용자 위치(이름과 KATEC 좌표).
 export type Origin = string | { name: string; x: number; y: number };
 
 export function resolveOrigin(origin: Origin) {
-  if (typeof origin === "string") return PLACES[origin] ?? null;
+  if (typeof origin === "string") return placeAt(origin);
   return origin.name && isKatec(origin.x, origin.y) ? origin : null;
 }
 
