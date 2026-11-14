@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function RecordsPage() {
-  return <ChatPanel fixedQuestion={data.meta.question} region={DEMO_REGION} section="records" />;
+  return <ChatPanel fixedQuestion={data.meta.question} region={DEMO_REGION} />;
 }

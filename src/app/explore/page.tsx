@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function ExplorePage() {
-  return <ChatPanel fixedQuestion={data.meta.question} region={DEMO_REGION} section="explore" />;
+  return <ChatPanel fixedQuestion={data.meta.question} region={DEMO_REGION} />;
 }
