@@ -8,9 +8,9 @@ import type { FuelReport } from "@/lib/fuelReport";
 import { amountName, amountQuery, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
-import { DEFAULT_PLACE, initialPlace, MY, placeLabel, usablePlace } from "@/lib/places";
+import { DEFAULT_PLACE, initialPlace, MY, NO_PLACE, placeLabel, usablePlace } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
-import { fuelName, saveProfile, signedIn, type Profile } from "@/lib/profile";
+import { fuelName, GUEST, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
 import { addLedgerEntry, ledgerForMonth, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger } from "@/lib/savedLedger";
@@ -35,6 +35,7 @@ import {
   type TaxImpact,
 } from "./AnswerCards";
 import { ConditionBar } from "./ConditionBar";
+import { openLocationPicker } from "./LocationPicker";
 import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary } from "./FillCards";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
@@ -374,7 +375,7 @@ export default function ChatPanel({
   const fullTank = useFullLiters(profile.fullLiters);
   const place = usablePlace(conditions?.place ?? placeChoice ?? initialPlace(profile), profile);
   const placeName = placeLabel(place, profile);
-  const homeArea = profile.area ?? { code: region.area, name: region.name };
+  const homeArea = profile.area; // 위치를 고르기 전에는 null(어느 지역도 가정하지 않는다)
   const loggedIn = mounted && signedIn(profile);
   // 제도 금액 질문의 말: "5만원어치 넣는 데", "가득 넣는 데"
   const amountPhrase = (chosen: Amount) => `${chosen === "full" ? "가득" : amountName(chosen)} 넣는 데`;
@@ -429,17 +430,29 @@ export default function ChatPanel({
 
   const cheapestQuestion = profile.location
     ? `${profile.location.label} 근처 제일 싼 ${fuelName(fuel)} 어디야?`
-    : `${homeArea.name}에서 제일 싼 ${fuelName(fuel)} 어디야?`;
+    : homeArea
+      ? `${homeArea.name}에서 제일 싼 ${fuelName(fuel)} 어디야?`
+      : `내 근처 제일 싼 ${fuelName(fuel)} 어디야?`;
 
   // 반경 5km 최저가. origin 없이 부르면 홈처럼 내 위치(없으면 내 지역 최저가)를 쓴다.
+  // 위치도 지역도 고르지 않았으면 묻지 않고 위치 고르기 창을 연다.
   const askCheapest = (origin?: string) => {
     const chosen = fuel;
     const near = origin ?? (profile.location ? MY : null);
+    const url =
+      near === NO_PLACE
+        ? null
+        : near
+          ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(near) })}`
+          : homeArea
+            ? `/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: homeArea.code })}`
+            : null;
+    if (!url) {
+      openLocationPicker();
+      return;
+    }
     const question = origin ? `${placeLabel(origin, profile)} 근처 제일 싼 ${fuelName(chosen)} 어디야?` : cheapestQuestion;
     ask(question, "list", async () => {
-      const url = near
-        ? `/api/stations/nearby?${new URLSearchParams({ fuel: chosen, ...originQuery(near) })}`
-        : `/api/stations/cheapest?${new URLSearchParams({ fuel: chosen, area: homeArea.code })}`;
       const { ok, body } = await getJson(url);
       if (!ok || !body) return body?.error ? { from: "bot", text: body.error } : null;
       if (body.stations.length === 0) {
@@ -468,6 +481,10 @@ export default function ChatPanel({
 
   const askTotalCost = () => {
     const [chosenFuel, chosenPlace, chosenAmount] = [fuel, place, amount];
+    if (chosenPlace === NO_PLACE) {
+      openLocationPicker();
+      return;
+    }
     ask(`${placeName}에서 거리까지 따지면 ${fuelName(chosenFuel)} 어디가 나아?`, "list", async () => {
       const query = new URLSearchParams({
         fuel: chosenFuel,
@@ -489,7 +506,8 @@ export default function ChatPanel({
     ask(`유류세 인하 끝나면 ${fuelName(chosenFuel)} ${amountPhrase(chosenAmount)} 얼마 더 들어?`, "text", async () => {
       const query = new URLSearchParams({
         fuel: chosenFuel,
-        ...originQuery(chosenPlace),
+        // 출발 위치를 고르지 않았으면 '어디서'(거리까지 고려한 추천)는 빼고 언제·얼마만 받는다.
+        ...(chosenPlace === NO_PLACE ? { place: "none" } : originQuery(chosenPlace)),
         ...amountQuery(chosenAmount, fullTank),
         kmpl: String(profile.kmpl),
       });
@@ -560,9 +578,12 @@ export default function ChatPanel({
         ...typical,
         kmpl: String(profile.kmpl),
       });
-      // 추천은 오피넷이 안 될 때 빼고 보여 준다. 예상일은 기록만으로 셈한 값이라 그대로 쓸 수 있다.
-      const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
-      const cost: CostResult | null = ok && body?.stations ? body : null;
+      // 추천은 오피넷이 안 될 때와 출발 위치를 고르지 않았을 때 빼고 보여 준다. 예상일은 기록만으로 셈한 값이라 그대로 쓸 수 있다.
+      let cost: CostResult | null = null;
+      if (chosenPlace !== NO_PLACE) {
+        const { ok, body } = await getJson(`/api/stations/total-cost?${query}`);
+        cost = ok && body?.stations ? body : null;
+      }
       return { from: "bot", forecast, forecastCost: cost, summary: forecastSummary(forecast, cost) };
     });
   }
@@ -600,15 +621,16 @@ export default function ChatPanel({
   // fresh: 새 대화로 시작한 질문이라 앞 대화 기록을 보내지 않는다.
   function askFree(question: string, photo?: Photo, fresh = false) {
     const history = toTurns([...(fresh ? [] : messages), { from: "user", text: question }]);
-    const screen = { fuel, amount, place };
+    const screen = { fuel, amount, place: place === NO_PLACE ? null : place };
     ask(question, "text", async () => {
       const { ok, body } = await getJson("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // 내 정보(이름, 위치, 차)는 서버가 다시 검사해 답을 맞추는 데만 쓴다. 사진은 이번 질문에만 붙인다.
+        // 로그인 전에는 위치 고르기로 고른 지역·위치만 보낸다.
         body: JSON.stringify({
           messages: history,
-          profile: loggedIn ? profile : undefined,
+          profile: loggedIn ? profile : { ...GUEST, area: profile.area, location: profile.location },
           image: photo ? { mediaType: photo.mediaType, data: photo.data } : undefined,
           // 주유 장부는 리포트·주유소 점검 도구가 쓸 때만 AI에 들어간다.
           ledger: ledgerForServer(),
@@ -807,7 +829,8 @@ export default function ChatPanel({
   };
   const today = mounted ? kstClock().today : "";
   // 오늘의 기름 소식은 홈에서만 받는다(오피넷 하루 한도).
-  const briefing = useBriefing(fuel, homeArea.code, mounted && !isPanel);
+  // 위치를 고르기 전에는 전국 평균만 받는다.
+  const briefing = useBriefing(fuel, homeArea?.code ?? null, mounted && !isPanel);
   const headline = mounted ? (newsHeadline(today, fuel, briefing?.data ?? null) ?? greeting(kstClock().hour)) : "안녕하세요";
 
   return (
@@ -858,7 +881,21 @@ export default function ChatPanel({
             {mounted && <FuelNews today={today} fuel={fuel} state={briefing} notice={loggedIn ? nextNotice(profile) : null} />}
             {mounted && !loggedIn && (
               <p className="mt-3 text-center text-sm text-ink-soft">
-                지금은 {region.name} 기준이에요. 로그인하면 내 위치와 내 차 기준으로 알려 드려요.{" "}
+                {profile.location || homeArea ? (
+                  <>지금은 {profile.location?.label ?? homeArea?.name} 기준이에요. 내 차까지 맞추려면 </>
+                ) : (
+                  <>
+                    지금은 전국 기준이에요.{" "}
+                    <button
+                      type="button"
+                      onClick={() => openLocationPicker()}
+                      className="font-semibold text-ink underline underline-offset-4"
+                    >
+                      위치 고르기
+                    </button>
+                    를 하면 우리 동네 기준으로 알려 드려요. 내 차까지 맞추려면{" "}
+                  </>
+                )}
                 <Link href="/login" className="font-semibold text-ink underline underline-offset-4">
                   간편 로그인
                 </Link>
@@ -1117,7 +1154,7 @@ export default function ChatPanel({
                   : "궁금한 것을 적어 주세요"
                 : loggedIn
                   ? "예: 우리 집 근처 경유, 거리까지 따지면?"
-                  : "예: 언양 쪽 경유, 거리까지 따지면 어디가 나아?"
+                  : "예: 해운대구 경유 제일 싼 곳 어디야?"
             }
             aria-label="질문 입력"
             className="min-w-0 flex-1 rounded-full bg-transparent px-2 py-2.5 text-[15px] placeholder:text-ink-soft focus-visible:outline-offset-1"
