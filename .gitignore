@@ -43,3 +43,6 @@ next-env.d.ts
 
 # impeccable 검토용 스크린샷
 .impeccable/review/
+
+# 개발용 계정 저장(로컬 가입·로그인 시험)
+/.data/
