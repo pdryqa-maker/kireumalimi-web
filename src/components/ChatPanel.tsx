@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
-import { buildNotices, kstClock, scheduleNotices } from "@/lib/conditions";
+import { buildNotices, kstClock, scheduleNotices, type Personal } from "@/lib/conditions";
 import type { FuelReport } from "@/lib/fuelReport";
-import { amountName, amountQuery, wonName, type Amount } from "@/lib/fillAmount";
+import { amountName, amountQuery, fullLiters, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
+import { favoriteStation, fillPlan, monthProjection } from "@/lib/personal";
 import { DEFAULT_PLACE } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
 import { fuelName, saveProfile, signedIn, type Profile } from "@/lib/profile";
@@ -210,16 +211,31 @@ function greeting(hour: number) {
 // 다음에 받을 알림 한 줄. 내 알림 조건에 켜 둔 제도·예보 조건으로 셈하고, 보낼 알림이 없으면 null.
 function nextNotice(profile: Profile) {
   const watch = parseWatch(watchStore.read());
+  const { today } = kstClock();
+  // 보낼 날만 쓰므로 오피넷 값(평균가·리터 환산)은 셈하지 않는다. 한 달 주행거리 예보는 가득일 때만 리터를 안다.
+  const entries = mergeLedger(parseLedger(ledgerStore.read()), parseFills(fillStore.read()));
+  const fillLiters = profile.amount === "full" ? fullLiters(entries, profile.fullLiters).liters : null;
+  const plan = fillPlan({ entries, monthlyKm: profile.monthlyKm, kmpl: fuelEconomy(profile).kmpl, fillLiters, today });
+  const personal: Personal = {
+    plan,
+    cost: null,
+    tax: null,
+    projection: monthProjection({ entries, plan, perFillWon: plan?.typicalWon ?? null, today }),
+    amount: profile.amount,
+    monthlyKm: profile.monthlyKm,
+    favoriteName: favoriteStation(entries, today)?.name ?? null,
+    ureaNeeded: profile.ureaNeeded,
+  };
   const notices = buildNotices({
     watch,
-    car: { fuel: profile.fuel, fill: null }, // 제목과 보낼 날만 쓰므로 금액은 셈하지 않는다
+    car: { fuel: profile.fuel, fill: null },
     alerts: parseAlerts(alertStore.read()),
     checks: {},
-    fills: parseFills(fillStore.read()),
+    personal,
+    today,
   });
   const first = scheduleNotices(notices)[0];
   if (!first) return null;
-  const { today } = kstClock();
   const when = first.now ? "지금" : first.sendOn === today ? "오늘" : first.sendOn === addDays(today, 1) ? "내일" : dayWithWeekday(first.sendOn);
   return `${when} · ${first.title}`;
 }
