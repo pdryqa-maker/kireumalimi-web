@@ -63,9 +63,9 @@ export async function currentSession(request: Request, deps: Deps): Promise<Sess
   return verifySession(readCookie(request, SESSION_COOKIE), deps.config.secret, Math.floor(deps.now() / 1000));
 }
 
-async function sessionCookie(request: Request, id: string, deps: Deps & { config: AccountConfig }) {
+async function sessionCookie(request: Request, id: string, createdAt: number, deps: Deps & { config: AccountConfig }) {
   const iat = Math.floor(deps.now() / 1000);
-  const token = await signSession({ sub: id, iat, exp: iat + SESSION_MAX_AGE }, deps.config.secret);
+  const token = await signSession({ sub: id, ca: createdAt, iat, exp: iat + SESSION_MAX_AGE }, deps.config.secret);
   return cookieHeader(SESSION_COOKIE, token, { maxAge: SESSION_MAX_AGE, secure: isSecure(request) });
 }
 
@@ -111,9 +111,11 @@ export function signup(request: Request, deps: Deps) {
     const auth = await hashPassword(body.password);
     if (!(await ready.redis.hsetnx(key, "auth", JSON.stringify(auth)))) return fail(409, MESSAGES.taken);
     const now = ready.now();
-    await ready.redis.hset(key, { meta: JSON.stringify({ createdAt: now, updatedAt: now }) });
+    // 탈퇴와 겹친 올리기가 남긴 칸이 있어도 새 계정은 빈 칸에서 시작한다(빈 문자열은 parseStored가 버린다)
+    const empty = Object.fromEntries(SYNC_FIELDS.map((field) => [field, ""]));
+    await ready.redis.hset(key, { ...empty, meta: JSON.stringify({ createdAt: now, updatedAt: now }) });
     await ready.redis.expire(key, REDIS_TTL);
-    return Response.json({ ok: true }, { headers: { "Set-Cookie": await sessionCookie(request, id, ready) } });
+    return Response.json({ ok: true }, { headers: { "Set-Cookie": await sessionCookie(request, id, now, ready) } });
   });
 }
 
@@ -142,7 +144,9 @@ export function login(request: Request, deps: Deps) {
     if (!auth || !matched || body.password.length > PASSWORD_LIMITS.max) return fail(401, MESSAGES.wrong);
 
     await ready.redis.del(failKey(id));
-    return Response.json({ ok: true }, { headers: { "Set-Cookie": await sessionCookie(request, id, ready) } });
+    const account = await accountFrom(ready, id, stored);
+    if (!account) return fail(401, MESSAGES.wrong);
+    return Response.json({ ok: true }, { headers: { "Set-Cookie": await sessionCookie(request, id, account.createdAt, ready) } });
   });
 }
 
@@ -159,11 +163,14 @@ const clearSession = (request: Request) => clearCookieHeader(SESSION_COOKIE, { s
 
 type Ready = Deps & { config: AccountConfig; redis: Redis };
 
-// 계정 해시를 읽고 가입 시각을 돌려준다. 계정이 없으면 null.
+// 계정 해시와 가입 시각, tag. 계정이 없으면 null.
+// 비밀번호 없이 칸만 남은 해시(탈퇴와 겹친 올리기가 다시 만든 것)는 주인이 없으니 지운다.
 // 가입 중 저장소가 끊겨 meta가 빠졌으면 지금 시각으로 채워, 다음부터 tag가 바뀌지 않게 한다.
-async function loadAccount(ready: Ready, id: string) {
-  const hash = await ready.redis.hgetall(accountKey(id));
-  if (!hash?.auth) return null;
+async function accountFrom(ready: Ready, id: string, hash: Record<string, string> | null) {
+  if (!hash?.auth) {
+    if (hash && Object.keys(hash).length > 0) await ready.redis.del(accountKey(id));
+    return null;
+  }
   let createdAt: unknown = null;
   try {
     createdAt = JSON.parse(hash.meta ?? "null")?.createdAt;
@@ -176,6 +183,12 @@ async function loadAccount(ready: Ready, id: string) {
   return { hash, createdAt: createdAt as number, tag };
 }
 
+// 세션의 계정. 가입 시각이 다르면(탈퇴 뒤 같은 아이디로 새로 가입한 계정) 그 세션의 계정은 없는 것으로 본다.
+async function sessionAccount(ready: Ready, session: Session) {
+  const account = await accountFrom(ready, session.sub, await ready.redis.hgetall(accountKey(session.sub)));
+  return account && account.createdAt === session.ca ? account : null;
+}
+
 const deletedResponse = (request: Request, body: object) =>
   Response.json({ ...body, deleted: true }, { status: 401, headers: { ...noStore, "Set-Cookie": clearSession(request) } });
 
@@ -185,7 +198,7 @@ export async function getAccount(request: Request, deps: Deps) {
   const session = await currentSession(request, ready);
   if (!session) return Response.json({ enabled: true, account: null }, { headers: noStore });
   try {
-    const account = await loadAccount(ready, session.sub);
+    const account = await sessionAccount(ready, session);
     if (!account) return deletedResponse(request, { enabled: true, account: null });
     await ready.redis.expire(accountKey(session.sub), REDIS_TTL);
     return Response.json(
@@ -223,7 +236,7 @@ export function putAccount(request: Request, deps: Deps) {
       fields[field] = JSON.stringify(cleanField(field, value));
     }
 
-    const account = await loadAccount(ready, session.sub);
+    const account = await sessionAccount(ready, session);
     if (!account) return deletedResponse(request, { error: MESSAGES.deleted });
     if (typeof body.tag !== "string" || !safeEqual(body.tag, account.tag)) return fail(409, MESSAGES.otherAccount);
     const meta = JSON.stringify({ createdAt: account.createdAt, updatedAt: ready.now() });
@@ -238,6 +251,7 @@ export function deleteAccount(request: Request, deps: Deps) {
   return guarded(request, deps, async (ready) => {
     const session = await currentSession(request, ready);
     if (!session) return fail(401, MESSAGES.signedOut);
+    if (!(await sessionAccount(ready, session))) return deletedResponse(request, { error: MESSAGES.deleted });
     await ready.redis.del(accountKey(session.sub), failKey(session.sub));
     return Response.json({ ok: true }, { headers: { ...noStore, "Set-Cookie": clearSession(request) } });
   });

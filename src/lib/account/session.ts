@@ -1,5 +1,6 @@
-// 로그인 세션: 아이디와 만료 시각을 AUTH_SECRET으로 서명해 httpOnly 쿠키에 둔다. 서버에는 세션을 따로 저장하지 않는다.
-export type Session = { sub: string; iat: number; exp: number }; // 초 단위
+// 로그인 세션: 아이디, 그 계정의 가입 시각, 만료 시각을 AUTH_SECRET으로 서명해 httpOnly 쿠키에 둔다. 서버에는 세션을 따로 저장하지 않는다.
+// 가입 시각(ca, 밀리초)이 계정과 다르면 탈퇴 뒤 같은 아이디로 새로 만든 계정이므로 그 세션은 쓰지 않는다.
+export type Session = { sub: string; ca: number; iat: number; exp: number }; // iat·exp는 초 단위
 
 export const SESSION_COOKIE = "kireumalimi_session";
 export const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30일. 늘려 주지 않는다
@@ -48,10 +49,11 @@ export async function verifySession(token: string | undefined, secret: string, n
     const ok =
       typeof value?.sub === "string" &&
       value.sub !== "" &&
+      Number.isInteger(value.ca) &&
       Number.isInteger(value.iat) &&
       Number.isInteger(value.exp) &&
       nowSec < value.exp;
-    return ok ? { sub: value.sub, iat: value.iat, exp: value.exp } : null;
+    return ok ? { sub: value.sub, ca: value.ca, iat: value.iat, exp: value.exp } : null;
   } catch {
     return null;
   }
