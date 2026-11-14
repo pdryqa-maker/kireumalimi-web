@@ -4,11 +4,13 @@
 // 시제품은 알림을 보내지 않고, 지금 조건으로 받게 될 알림과 보내는 때를 미리 보여 준다.
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { buildNotices, kstClock, RULES, scheduleNotices, type Planned, type PriceCheck } from "@/lib/conditions";
+import { buildNotices, kstClock, RULES, scheduleNotices, type Personal, type Planned, type PriceCheck } from "@/lib/conditions";
+import { fillPlan } from "@/lib/personal";
 import { amountName } from "@/lib/fillAmount";
 import { addDays } from "@/lib/fillForecast";
 import { FUEL_TAX_CUT, PRICE_CAP } from "@/lib/policy";
 import { addAlert, alertStore, MAX_ALERTS, parseAlerts, removeAlert, type SavedAlert } from "@/lib/savedAlerts";
+import { mergeLedger } from "@/lib/savedLedger";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
 import { fuelName, signedIn } from "@/lib/profile";
 import { parseWatch, saveWatch, watchStore, type Watch } from "@/lib/watchSettings";
@@ -213,7 +215,10 @@ export default function AlertsManager() {
 
   // 오늘 날짜와 지금 시각은 브라우저에서만 읽는다(서버에서 미리 그릴 때 시각이 굳지 않게).
   const today = mounted ? kstClock().today : "";
-  const notices = mounted ? buildNotices({ watch, car, alerts, checks, fills, today }) : [];
+  // 내 기록과 같은 장부로 예보한다. 월말·단골·요소수와 예상 비용은 알림 탭 개편(usePersonal)에서 채운다.
+  const plan = mounted ? fillPlan({ entries: mergeLedger([], fills), monthlyKm: null, kmpl: 0, fillLiters: null, today }) : null;
+  const personal: Personal = { plan, cost: null, tax: null, projection: null, amount: profile.amount, monthlyKm: null, favoriteName: null, ureaNeeded: false };
+  const notices = mounted ? buildNotices({ watch, car, alerts, checks, personal, today }) : [];
   const planned = mounted ? scheduleNotices(notices) : [];
   const waiting = notices.filter((notice) => !planned.some((plan) => plan.id === notice.id));
 
