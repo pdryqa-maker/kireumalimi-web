@@ -72,7 +72,7 @@ function priceNotice(alert: SavedAlert, check: PriceCheck | undefined, today: st
     readyOn: null,
     message: null,
   };
-  if (!check) return { ...base, state: "가격은 '가격 지금 점검'을 누르면 오피넷으로 확인해요." };
+  if (!check) return { ...base, state: "가격은 '지금 점검'을 누르면 오피넷으로 확인해요." };
   if ("error" in check) return { ...base, state: check.error };
   const best = check.matches[0];
   if (!best) {
@@ -174,7 +174,7 @@ function forecastNotice({ plan, cost, tax, amount, monthlyKm }: Personal): Notic
 }
 
 // 월말 예상 지출: 매달 25일 아침. 주유 장부와 다음 주유 계획만 쓴다.
-function monthlyNotice({ projection }: Personal, today: string): Notice {
+function monthlyNotice({ projection, plan }: Personal, today: string): Notice {
   const base = { id: `monthly-${today.slice(0, 7)}`, kind: "monthly" as const, title: `월말 예상 지출(매달 ${RULES.monthlyDay}일)` };
   if (Number(today.slice(8, 10)) > RULES.monthlyDay) {
     return { ...base, state: `다음 달 ${RULES.monthlyDay}일에 알려요.`, readyOn: null, message: null };
@@ -190,7 +190,9 @@ function monthlyNotice({ projection }: Personal, today: string): Notice {
     message:
       `이번 달 기름값은 약 ${wonName(projectedWon)} 쓸 것 같아요(지금까지 ${wonName(spentWon)}` +
       (lastMonthWon !== null ? `, 지난달 ${wonName(lastMonthWon)}` : "") +
-      "). 주유 장부로 셈했어요.",
+      (plan?.basis === "monthlyKm" && spentWon === 0 && lastMonthWon === null
+        ? "). 기록이 없어 한 달 주행거리로 셈했어요."
+        : "). 주유 장부로 셈했어요."),
   };
 }
 
@@ -203,7 +205,7 @@ function favoriteNotice({ favoriteName }: Personal, check: FavoriteCheck | undef
   const { name, areaName, diffWon, cheaper, fetchedAt } = check;
   const gap = diffWon >= 0 ? `${won(diffWon)}원 비싸요` : `${won(-diffWon)}원 싸요`;
   if (diffWon < RULES.favoriteOverWon) {
-    return { ...base, state: `${name}${josa(name, "은", "는")} ${areaName} 평균보다 ${gap}(${koreanTime(fetchedAt)} 조회). ${RULES.favoriteOverWon}원 넘게 비싸지면 알려요.` };
+    return { ...base, state: `${name}${josa(name, "은", "는")} ${areaName} 평균보다 ${gap}(${koreanTime(fetchedAt)} 조회). ${RULES.favoriteOverWon}원 이상 비싸지면 알려요.` };
   }
   return {
     ...base,

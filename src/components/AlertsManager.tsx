@@ -2,21 +2,22 @@
 
 // 내 알림 조건 화면. 일반 이용자가 조건을 미리 걸어 두면, 조건에 맞을 때만 알려 준다.
 // 시제품은 알림을 보내지 않고, 지금 조건으로 받게 될 알림과 보내는 때를 미리 보여 준다.
+// 주유 예보·월말 예상·단골은 내 기록과 같은 장부와 내 정보로 셈한다(usePersonal).
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { buildNotices, kstClock, RULES, scheduleNotices, type Personal, type Planned, type PriceCheck } from "@/lib/conditions";
-import { fillPlan } from "@/lib/personal";
+import { buildNotices, josa, kstClock, RULES, scheduleNotices, type Planned, type PriceCheck, type UreaCheck } from "@/lib/conditions";
 import { amountName } from "@/lib/fillAmount";
 import { addDays } from "@/lib/fillForecast";
 import { FUEL_TAX_CUT, PRICE_CAP } from "@/lib/policy";
 import { addAlert, alertStore, MAX_ALERTS, parseAlerts, removeAlert, type SavedAlert } from "@/lib/savedAlerts";
-import { mergeLedger } from "@/lib/savedLedger";
+import { ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
 import { fuelName, signedIn } from "@/lib/profile";
 import { parseWatch, saveWatch, watchStore, type Watch } from "@/lib/watchSettings";
 import { FillLogCard } from "./FillCards";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
-import { useFill, useFullLiters } from "./useFill";
+import { checkFavorite, checkUrea, type FavoriteResult } from "./personalChecks";
+import { usePersonal } from "./usePersonal";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const SELECT =
@@ -132,13 +133,18 @@ export default function AlertsManager() {
   const watch = useStored(watchStore, parseWatch);
   const alerts = useStored(alertStore, parseAlerts);
   const fills = useStored(fillStore, parseFills);
+  const ledger = useStored(ledgerStore, parseLedger);
   const profile = useProfile();
   const mounted = useMounted();
-  const fullTank = useFullLiters(profile.fullLiters);
-  const { fill } = useFill(profile.fuel, profile.amount, fullTank);
+  // 오늘 날짜와 지금 시각은 브라우저에서만 읽는다(서버에서 미리 그릴 때 시각이 굳지 않게).
+  const today = mounted ? kstClock().today : "";
+  const entries = mergeLedger(ledger, fills);
+  const { fill, personal, favorite, monthly } = usePersonal(profile, entries, today || null, profile.area?.code ?? DEFAULT_AREA.code);
   const car = { fuel: profile.fuel, fill };
   const carAmount = fill?.label ?? amountName(profile.amount);
   const [checks, setChecks] = useState<Record<string, PriceCheck>>({});
+  const [favoriteCheck, setFavoriteCheck] = useState<{ name: string; result: FavoriteResult } | null>(null);
+  const [ureaCheck, setUreaCheck] = useState<UreaCheck | undefined>(undefined);
   const [checking, setChecking] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
   const [fuelChoice, setPriceFuel] = useState<string | null>(null);
@@ -207,18 +213,22 @@ export default function AlertsManager() {
     setPriceError("");
   }
 
-  async function checkPrices() {
+  // '지금 점검': 가격 조건 → 단골 주유소(켜져 있고 단골이 있을 때) → 요소수(켜져 있고 필요할 때) 차례로 오피넷에 묻는다.
+  const checkFavoriteNow = watch.favorite && favorite !== null;
+  const checkUreaNow = watch.urea && personal.ureaNeeded;
+  const canCheck = alerts.length > 0 || checkFavoriteNow || checkUreaNow;
+  async function checkNow() {
     setChecking(true);
-    setChecks(await fetchPrices(alerts));
+    if (alerts.length > 0) setChecks(await fetchPrices(alerts));
+    if (checkFavoriteNow) setFavoriteCheck({ name: favorite.name, result: await checkFavorite(favorite.name, profile, monthly) });
+    if (checkUreaNow) setUreaCheck(await checkUrea(profile));
     setChecking(false);
   }
 
-  // 오늘 날짜와 지금 시각은 브라우저에서만 읽는다(서버에서 미리 그릴 때 시각이 굳지 않게).
-  const today = mounted ? kstClock().today : "";
-  // 내 기록과 같은 장부로 예보한다. 월말·단골·요소수와 예상 비용은 알림 탭 개편(usePersonal)에서 채운다.
-  const plan = mounted ? fillPlan({ entries: mergeLedger([], fills), monthlyKm: null, kmpl: 0, fillLiters: null, today }) : null;
-  const personal: Personal = { plan, cost: null, tax: null, projection: null, amount: profile.amount, monthlyKm: null, favoriteName: null, ureaNeeded: false };
-  const notices = mounted ? buildNotices({ watch, car, alerts, checks, personal, today }) : [];
+  const favoriteResult = favorite && favoriteCheck?.name === favorite.name ? favoriteCheck.result : undefined;
+  const notices = mounted
+    ? buildNotices({ watch, car, alerts, checks, personal, favorite: favoriteResult, urea: ureaCheck, today })
+    : [];
   const planned = mounted ? scheduleNotices(notices) : [];
   const waiting = notices.filter((notice) => !planned.some((plan) => plan.id === notice.id));
 
@@ -330,14 +340,51 @@ export default function AlertsManager() {
             <div className="flex-1">
               <p className="font-semibold">내 차 주유 예보</p>
               <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
-                주유 기록으로 다음 주유일을 셈해, 그 주 월요일 아침에 알려요.{" "}
-                {mounted && (fills.length > 0 ? `저장한 기록 ${fills.length}번.` : "저장한 기록이 없어요.")}
+                주유 기록(모자라면 내 정보의 한 달 주행거리)으로 다음 주유일을 셈해, 그 주 월요일 아침에 알려요.{" "}
+                {mounted && (entries.length > 0 ? `주유 기록 ${entries.length}번.` : "저장한 기록이 없어요.")}
               </p>
               <button type="button" onClick={() => setFillOpen(!fillOpen)} aria-expanded={fillOpen} className={`${BUTTON} mt-2.5`}>
                 {fillOpen ? "기록 닫기" : mounted && fills.length > 0 ? "기록 고치기" : "기록 넣기"}
               </button>
             </div>
             <Switch label="내 차 주유 예보 알림" checked={mounted && watch.forecast} onChange={(forecast) => change({ forecast })} />
+          </li>
+          <li className="flex items-start gap-4 py-4">
+            <div className="flex-1">
+              <p className="font-semibold">월말 예상 지출(매달 {RULES.monthlyDay}일)</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
+                주유 장부와 다음 주유 계획으로 이번 달에 쓸 기름값을 셈해, 매달 {RULES.monthlyDay}일 아침에 지난달과 함께 알려요.
+              </p>
+            </div>
+            <Switch label="월말 예상 지출 알림(매달 25일)" checked={mounted && watch.monthly} onChange={(monthly) => change({ monthly })} />
+          </li>
+          <li className="flex items-start gap-4 py-4">
+            <div className="flex-1">
+              <p className="font-semibold">단골 주유소가 동네 평균보다 {RULES.favoriteOverWon}원 이상 비쌀 때</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
+                {mounted && favorite
+                  ? `단골은 ${favorite.name}${josa(favorite.name, "이에요", "예요")}. '지금 점검'을 누르면 오피넷 가격으로 동네 평균과 견주고, 근처에서 덜 드는 곳도 알려요.`
+                  : "주유 기록에 주유소 이름이 남으면 가장 자주 간 곳을 단골로 보고 동네 평균과 견줘요."}
+              </p>
+            </div>
+            <Switch
+              label={`단골 주유소가 동네 평균보다 ${RULES.favoriteOverWon}원 이상 비쌀 때`}
+              checked={mounted && watch.favorite}
+              onChange={(next) => change({ favorite: next })}
+            />
+          </li>
+          <li className="flex items-start gap-4 py-4">
+            <div className="flex-1">
+              <p className="font-semibold">요소수 재고</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">
+                {mounted && personal.ureaNeeded
+                  ? `'지금 점검'을 누르면 ${profile.home ? "집 근처" : profile.location ? `${profile.location.label} 근처` : "내 지역"}에서 요소수 재고가 있는 곳을 찾아요.`
+                  : "내 정보에서 요소수가 필요한 경유차로 고르면 켤 수 있어요."}
+              </p>
+            </div>
+            {mounted && personal.ureaNeeded && (
+              <Switch label="요소수 재고 알림" checked={watch.urea} onChange={(urea) => change({ urea })} />
+            )}
           </li>
         </ul>
         {fillOpen && (
@@ -359,9 +406,9 @@ export default function AlertsManager() {
           <h2 id="plan-title" className="flex-1 text-xl font-bold tracking-tight">
             받을 알림
           </h2>
-          {mounted && alerts.length > 0 && (
-            <button type="button" onClick={checkPrices} disabled={checking} className={`${BUTTON} bg-accent text-on-accent`}>
-              {checking ? "점검 중…" : "가격 지금 점검"}
+          {mounted && canCheck && (
+            <button type="button" onClick={checkNow} disabled={checking} className={`${BUTTON} bg-accent text-on-accent`}>
+              {checking ? "점검 중…" : "지금 점검"}
             </button>
           )}
         </div>
