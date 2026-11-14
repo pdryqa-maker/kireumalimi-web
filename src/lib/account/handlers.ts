@@ -2,10 +2,10 @@
 // 로그에는 아이디나 비밀번호를 남기지 않는다. 저장소 오류만 console.warn으로 남긴다.
 import { accountConfig, type AccountConfig } from "./config";
 import { clearCookieHeader, cookieHeader, readCookie } from "./cookies";
-import { accountKey, failKey, REDIS_TTL } from "./fields";
+import { accountKey, cleanField, failKey, isSyncField, MAX_FIELD_BYTES, parseStored, REDIS_TTL, SYNC_FIELDS } from "./fields";
 import { cleanLoginId, hashPassword, isPassword, PASSWORD_LIMITS, verifyPassword, type PasswordHash } from "./password";
 import { redisFor, RedisError, type Redis } from "./redis";
-import { SESSION_COOKIE, SESSION_MAX_AGE, signSession, verifySession, type Session } from "./session";
+import { accountTag, safeEqual, SESSION_COOKIE, SESSION_MAX_AGE, signSession, verifySession, type Session } from "./session";
 
 export type Deps = { config: AccountConfig | null; redis: Redis | null; now: () => number };
 
@@ -29,6 +29,10 @@ export const MESSAGES = {
   badRequest: "요청 형식이 맞지 않아요.",
   forbidden: "이 주소에서 보낸 요청만 받아요.",
   signedOut: "로그인이 필요해요.",
+  deleted: "계정이 없어요. 탈퇴했거나 1년 동안 쓰지 않아 지워졌어요.",
+  otherAccount: "다른 계정의 기록이라 올리지 않았어요.",
+  unknownField: "올릴 수 없는 칸이에요.",
+  tooBig: "기록이 너무 커서 올리지 못했어요.",
 };
 
 const LOCK_MAX = 5; // 10분 동안 이만큼 틀리면 잠근다
@@ -146,4 +150,95 @@ export function login(request: Request, deps: Deps) {
 export async function logout(request: Request) {
   if (!sameOrigin(request)) return fail(403, MESSAGES.forbidden);
   return Response.json({ ok: true }, { headers: { "Set-Cookie": clearCookieHeader(SESSION_COOKIE, { secure: isSecure(request) }) } });
+}
+
+// ── 계정 사본 ──────────────────────────────────────────────
+
+const noStore = { "Cache-Control": "no-store" };
+const clearSession = (request: Request) => clearCookieHeader(SESSION_COOKIE, { secure: isSecure(request) });
+
+type Ready = Deps & { config: AccountConfig; redis: Redis };
+
+// 계정 해시를 읽고 가입 시각을 돌려준다. 계정이 없으면 null.
+// 가입 중 저장소가 끊겨 meta가 빠졌으면 지금 시각으로 채워, 다음부터 tag가 바뀌지 않게 한다.
+async function loadAccount(ready: Ready, id: string) {
+  const hash = await ready.redis.hgetall(accountKey(id));
+  if (!hash?.auth) return null;
+  let createdAt: unknown = null;
+  try {
+    createdAt = JSON.parse(hash.meta ?? "null")?.createdAt;
+  } catch {}
+  if (!Number.isInteger(createdAt)) {
+    createdAt = ready.now();
+    await ready.redis.hset(accountKey(id), { meta: JSON.stringify({ createdAt, updatedAt: createdAt }) });
+  }
+  const tag = await accountTag(id, createdAt as number, ready.config.secret);
+  return { hash, createdAt: createdAt as number, tag };
+}
+
+const deletedResponse = (request: Request, body: object) =>
+  Response.json({ ...body, deleted: true }, { status: 401, headers: { ...noStore, "Set-Cookie": clearSession(request) } });
+
+export async function getAccount(request: Request, deps: Deps) {
+  if (!deps.config || !deps.redis) return Response.json({ enabled: false, account: null }, { headers: noStore });
+  const ready = deps as Ready;
+  const session = await currentSession(request, ready);
+  if (!session) return Response.json({ enabled: true, account: null }, { headers: noStore });
+  try {
+    const account = await loadAccount(ready, session.sub);
+    if (!account) return deletedResponse(request, { enabled: true, account: null });
+    await ready.redis.expire(accountKey(session.sub), REDIS_TTL);
+    return Response.json(
+      { enabled: true, account: { id: session.sub, tag: account.tag }, data: parseStored(account.hash) },
+      { headers: noStore },
+    );
+  } catch (error) {
+    if (!(error instanceof RedisError)) throw error;
+    console.warn("[account] 저장소 오류:", error.message);
+    return fail(503, MESSAGES.storeDown, noStore);
+  }
+}
+
+// 보낸 칸만 검사해 덮어쓴다. 하나라도 틀리면 아무 칸도 저장하지 않는다.
+export function putAccount(request: Request, deps: Deps) {
+  return guarded(request, deps, async (ready) => {
+    const session = await currentSession(request, ready);
+    if (!session) return fail(401, MESSAGES.signedOut);
+    const text = await request.text().catch(() => "");
+    if (text.length > SYNC_FIELDS.length * MAX_FIELD_BYTES + 1_024) return fail(413, MESSAGES.tooBig);
+    let body: { tag?: unknown; data?: unknown };
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return fail(400, MESSAGES.badRequest);
+    }
+    const data = body?.data;
+    if (!body || typeof body !== "object" || Array.isArray(body) || !data || typeof data !== "object" || Array.isArray(data)) {
+      return fail(400, MESSAGES.badRequest);
+    }
+    const fields: Record<string, string> = {};
+    for (const [field, value] of Object.entries(data)) {
+      if (!isSyncField(field)) return fail(400, MESSAGES.unknownField);
+      if (new TextEncoder().encode(JSON.stringify(value) ?? "").length > MAX_FIELD_BYTES) return fail(413, MESSAGES.tooBig);
+      fields[field] = JSON.stringify(cleanField(field, value));
+    }
+
+    const account = await loadAccount(ready, session.sub);
+    if (!account) return deletedResponse(request, { error: MESSAGES.deleted });
+    if (typeof body.tag !== "string" || !safeEqual(body.tag, account.tag)) return fail(409, MESSAGES.otherAccount);
+    const meta = JSON.stringify({ createdAt: account.createdAt, updatedAt: ready.now() });
+    await ready.redis.hset(accountKey(session.sub), { ...fields, meta });
+    await ready.redis.expire(accountKey(session.sub), REDIS_TTL);
+    return Response.json({ ok: true }, { headers: noStore });
+  });
+}
+
+// 탈퇴: 계정과 실패 횟수를 지우고 세션 쿠키도 지운다.
+export function deleteAccount(request: Request, deps: Deps) {
+  return guarded(request, deps, async (ready) => {
+    const session = await currentSession(request, ready);
+    if (!session) return fail(401, MESSAGES.signedOut);
+    await ready.redis.del(accountKey(session.sub), failKey(session.sub));
+    return Response.json({ ok: true }, { headers: { ...noStore, "Set-Cookie": clearSession(request) } });
+  });
 }
