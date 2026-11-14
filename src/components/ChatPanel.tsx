@@ -379,6 +379,7 @@ export default function ChatPanel({
   const [pending, setPending] = useState<SkeletonKind | null>(null);
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   // 대화 번호. 새 대화를 시작하면 올린다. 앞 대화의 늦게 온 답은 번호가 달라 붙이지 않는다.
   const threadRef = useRef(0);
@@ -413,8 +414,12 @@ export default function ChatPanel({
 
   useEffect(() => {
     // 첫 화면에서는 인사말이 보이도록 대화가 시작된 뒤에만 아래로 내린다.
-    if (messages.length > 0 || pending) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, pending]);
+    if (messages.length === 0 && !pending) return;
+    // 패널은 대화 목록만 내린다. scrollIntoView는 창까지 움직여, 대시보드를 내려 둔 채 상자를 누르면 페이지가 위로 끌려간다.
+    const list = listRef.current;
+    if (isPanel && list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+    else endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, pending, isPanel]);
 
   const busy = pending !== null;
   const hasMessages = messages.length > 0;
@@ -671,6 +676,9 @@ export default function ChatPanel({
     const fresh = photoFreshRef.current;
     photoFreshRef.current = false;
     const thread = threadRef.current;
+    // 사진을 고르면 바로 답을 준비하는 중으로 둔다. 줄이는 동안 버튼이 잠기고, 휴대폰 시트도 이때 열려
+    // 사진을 읽지 못했다는 안내가 닫힌 시트 뒤에 묻히지 않는다.
+    setPending("text");
     const photo = await shrinkPhoto(file);
     if (thread !== threadRef.current) return;
     const question = draft.trim() || photoQuestion || PHOTO_QUESTION;
@@ -678,6 +686,7 @@ export default function ChatPanel({
     setDraft("");
     if (fresh) startThread();
     if (!photo) {
+      setPending(null);
       setMessages((current) => [
         ...current,
         { from: "user", text: question },
@@ -832,7 +841,7 @@ export default function ChatPanel({
           : "flex h-[calc(100dvh-3.5rem-6rem)] min-h-[30rem] flex-col lg:h-[calc(100dvh-3.5rem)]"
       }
     >
-      <div aria-live="polite" className={`flex flex-1 flex-col gap-5 overflow-y-auto pb-4 ${isPanel ? "pt-1" : "pt-4"}`}>
+      <div ref={listRef} aria-live="polite" className={`flex flex-1 flex-col gap-5 overflow-y-auto pb-4 ${isPanel ? "pt-1" : "pt-4"}`}>
         {messages.length === 0 && !busy && isPanel && (
           <div className="my-auto py-6">
             <p className="text-[15px] font-semibold">이 탭에서 궁금한 것 물어보기</p>

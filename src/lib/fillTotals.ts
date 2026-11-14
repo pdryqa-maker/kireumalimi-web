@@ -106,3 +106,8 @@ export const monthFingerprint = (entries: LedgerEntry[], month: string) =>
     .filter((entry) => entry.date.startsWith(month) && entry.pricePerLiter !== null && entry.liters !== null)
     .map((entry) => `${entry.date}:${entry.liters}:${entry.pricePerLiter}`)
     .join(",");
+
+// 시도 평균 비교를 브라우저에 오래 남겨도 되는지: 지난 달이고, 단가 있는 주유를 모두 견줬을 때만.
+// 오피넷 장애·한도 초과(비교 0번이나 일부)나 평균이 아직 안 나온 날이 있을 수 있는 이번 달 결과는 남기지 않고 다음에 다시 받는다.
+export const vsAreaFinal = (comparedFills: number, pricedFills: number, month: string, today: string) =>
+  month < today.slice(0, 7) && pricedFills > 0 && comparedFills === pricedFills;

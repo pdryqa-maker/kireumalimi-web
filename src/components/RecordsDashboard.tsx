@@ -12,6 +12,7 @@ import {
   monthlySpend,
   paidWon,
   totals,
+  vsAreaFinal,
   type MonthSpend,
 } from "@/lib/fillTotals";
 import { fuelEconomy, type KmplSource } from "@/lib/fuelEconomy";
@@ -32,7 +33,7 @@ const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
 const DASHBOARD_QUESTION = "계기판 사진으로 내 연비 맞춰 줘";
 const CHART_MONTHS = 12;
 
-// 그 달 시도 평균 비교 결과. 달마다 기록 지문과 함께 남겨, 지문이 같으면 다시 부르지 않는다.
+// 그 달 시도 평균 비교 결과. 다 견준 지난 달만 기록 지문과 함께 남겨, 지문이 같으면 다시 부르지 않는다(vsAreaFinal).
 const vsAreaStore = browserStore("kireumalimi.vsArea", "{}");
 const parseVsArea = (raw: string): Record<string, VsArea> => {
   try {
@@ -126,7 +127,10 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
   // "시도 평균보다" 한 줄: 그 달 단가 있는 기록이 있을 때만, 처음 볼 때 한 번 받는다.
   const priced = month ? monthFingerprint(entries, month) : "";
   const fingerprint = priced ? `${profile.fuel}|${profile.area?.code ?? ""}|${priced}` : "";
-  const cached = fingerprint && vsArea[month]?.fingerprint === fingerprint ? vsArea[month] : null;
+  // 오래 남기지 않는 결과(이번 달, 일부만 견줌, 오피넷 장애)는 이 화면에서만 들고 있어 다시 그릴 때 또 부르지 않는다.
+  const [shown, setShown] = useState<Record<string, VsArea>>({});
+  const cached = !fingerprint ? null : vsArea[month]?.fingerprint === fingerprint ? vsArea[month] : (shown[fingerprint] ?? null);
+  const pricedFills = priced ? priced.split(",").length : 0;
   const [failed, setFailed] = useState<string | null>(null);
   const inflight = useRef(new Set<string>());
   useEffect(() => {
@@ -139,20 +143,20 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
     })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((body) => {
-        // vsArea가 null이면 견줄 시도 평균이 없던 것이다. 그것도 남겨 다시 부르지 않는다(비교 0번).
+        // vsArea가 null이면 이번에는 하나도 견주지 못한 것이다(평균이 없거나 오피넷을 못 불렀다).
         const result = body?.vsArea;
         if (result !== null && typeof result?.savedWon !== "number") throw new Error("vsArea 없음");
-        const next = {
-          ...parseVsArea(vsAreaStore.read()),
-          [month]: result
-            ? { fingerprint, area: String(result.area ?? ""), savedWon: result.savedWon, comparedFills: Number(result.comparedFills) || 0 }
-            : { fingerprint, area: "", savedWon: 0, comparedFills: 0 },
-        };
-        vsAreaStore.write(next);
+        const entry: VsArea = result
+          ? { fingerprint, area: String(result.area ?? ""), savedWon: result.savedWon, comparedFills: Number(result.comparedFills) || 0 }
+          : { fingerprint, area: "", savedWon: 0, comparedFills: 0 };
+        setShown((current) => ({ ...current, [fingerprint]: entry }));
+        if (vsAreaFinal(entry.comparedFills, pricedFills, month, today ?? "")) {
+          vsAreaStore.write({ ...parseVsArea(vsAreaStore.read()), [month]: entry });
+        }
       })
       .catch(() => setFailed(fingerprint))
       .finally(() => inflight.current.delete(fingerprint));
-  }, [fingerprint, cached, failed, month, profile]);
+  }, [fingerprint, cached, failed, month, profile, pricedFills, today]);
   const savedLine = !priced
     ? null
     : cached

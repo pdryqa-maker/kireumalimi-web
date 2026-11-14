@@ -37,6 +37,21 @@ export function usePanelState() {
   return { open, busy, hasResult, onActivity, openPanel, closePanel };
 }
 
+// 시트 밖을 inert로 잠근다: 시트에서 body까지 올라가며 형제 요소를 잠그고(배경 막은 눌러 닫을 수 있게 남긴다),
+// 풀 때 돌려놓는 함수를 돌려준다. 그래서 Tab으로 시트 뒤 대시보드나 탭 막대로 초점이 나가지 않는다.
+function inertOutside(element: HTMLElement) {
+  const locked: HTMLElement[] = [];
+  for (let node = element; node.parentElement && node !== document.body; node = node.parentElement) {
+    for (const sibling of node.parentElement.children) {
+      if (sibling !== node && sibling instanceof HTMLElement && !sibling.inert && !sibling.hasAttribute("data-sheet-backdrop")) {
+        sibling.inert = true;
+        locked.push(sibling);
+      }
+    }
+  }
+  return () => locked.forEach((item) => (item.inert = false));
+}
+
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -64,10 +79,14 @@ export function DashboardPanel({
   const desktop = useIsDesktop();
   const sheetOpen = open && !desktop;
   const closeRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
 
-  // 휴대폰 시트: 열리면 닫기 버튼으로 초점을 옮기고, Esc로 닫고, 뒤 화면이 같이 스크롤되지 않게 한다.
+  // 휴대폰 시트: 열리면 시트 밖을 잠그고 닫기 버튼으로 초점을 옮기고, Esc로 닫고, 뒤 화면이 같이 스크롤되지 않게 한다.
+  // 닫으면 시트를 연 버튼으로 초점을 돌려준다.
   useEffect(() => {
     if (!sheetOpen) return;
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const release = sheetRef.current ? inertOutside(sheetRef.current) : () => {};
     closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -78,22 +97,26 @@ export function DashboardPanel({
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = overflow;
+      release();
+      if (opener?.isConnected) opener.focus();
     };
   }, [sheetOpen, onClose]);
 
   return (
     <>
-      {sheetOpen && <div aria-hidden="true" onClick={onClose} className="fixed inset-0 z-40 bg-ink/30 lg:hidden" />}
-      {!open && !desktop && (
+      {sheetOpen && <div data-sheet-backdrop="" aria-hidden="true" onClick={onClose} className="fixed inset-0 z-40 bg-ink/30 lg:hidden" />}
+      {/* 시트가 열려 있을 때도 숨기기만 해, 시트를 닫으면 이 버튼으로 초점이 돌아온다. */}
+      {!desktop && (
         <button
           type="button"
           onClick={onOpen}
-          className="fixed right-4 bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4.5rem)] z-30 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-on-accent shadow-raised lg:hidden"
+          className={`fixed right-4 bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4.5rem)] z-30 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-on-accent shadow-raised lg:hidden ${open ? "hidden" : ""}`}
         >
           {hasResult ? "결과 보기" : "물어보기"}
         </button>
       )}
       <section
+        ref={sheetRef}
         aria-label={label}
         role={desktop ? undefined : "dialog"}
         aria-modal={sheetOpen ? true : undefined}
