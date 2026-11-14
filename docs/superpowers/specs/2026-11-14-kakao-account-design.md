@@ -136,7 +136,7 @@
 - 칸 하나의 크기 한도는 64KB. 넘으면 413. 장부 100번이 약 15KB다.
 - 보관 기간 [빌더 판단]: 탈퇴하거나 카카오에서 연결을 끊을 때까지. 다만 1년 동안 한 번도 쓰지 않으면 자동으로 지운다. 읽거나 쓸 때마다 키 만료를 1년 뒤로 미룬다(EXPIRE).
 - 환경변수: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`. Vercel 연동으로 넣으면 이름이 `KV_REST_API_URL`, `KV_REST_API_TOKEN`일 수 있어 둘 다 읽는다.
-- 클라이언트는 `@upstash/redis`(REST, 서버리스용)를 쓴다. [빌더 판단]
+- Upstash REST API를 `fetch`로 직접 부른다. 쓰는 명령은 HGETALL, HSET, HSETNX, DEL, EXPIRE 다섯 개뿐이라 새 라이브러리를 넣지 않는다. 시험에서 가짜 Redis로 바꾸기도 쉽다. [빌더 판단]
 
 ### 계정 API
 - `GET /api/account`
@@ -210,6 +210,7 @@
    - 카카오가 "카카오계정도 함께 로그아웃할지" 화면을 보인다. 같이 쓰는 PC에서 다음 사람이 '카카오 로그인'만 눌러 앞사람으로 들어가는 것을 막는다.
    - 카카오 세션이 없거나 카카오톡 안 브라우저면 바로 돌아온다(카카오 문서).
    - 로그아웃 리다이렉트 URI를 카카오에 등록해야 한다(설정 안내 참고).
+   - 이 단계는 https 주소(운영)에서만 한다. 카카오는 로그아웃 리다이렉트 URI에 80·443 포트만 받는다. 그래서 `localhost:3000`은 등록할 수 없고, 로컬에서는 바로 `/?account=loggedout`으로 간다.
 
 ### 회원 탈퇴
 1. 내 정보 화면의 '회원 탈퇴' → 확인 창 → `DELETE /api/account`.
@@ -249,11 +250,11 @@
 1. **카카오 디벨로퍼스(이용자)**
    - 앱을 만들고 카카오 로그인을 켠다.
    - 리다이렉트 URI 두 개를 등록한다: `http://localhost:3000/api/auth/kakao/callback`, `https://kireumalimi-web.vercel.app/api/auth/kakao/callback`.
-   - 로그아웃 리다이렉트 URI 두 개를 등록한다: `http://localhost:3000/?account=loggedout`, 운영 주소 같은 경로.
+   - 로그아웃 리다이렉트 URI를 하나 등록한다: `https://kireumalimi-web.vercel.app/?account=loggedout`. localhost는 포트 제한 때문에 등록할 수 없다.
    - 동의 항목에서 닉네임을 '선택 동의'로 둔다.
-   - 클라이언트 시크릿을 켠다.
-   - 연결 끊기 웹훅에 `https://kireumalimi-web.vercel.app/api/auth/kakao/unlink`를 등록한다.
-   - 웹 플랫폼 사이트 도메인에 두 주소를 등록한다.
+   - 클라이언트 시크릿을 확인한다. REST API 키에는 처음부터 켜져 있다.
+   - 연결 해제 웹훅에 `https://kireumalimi-web.vercel.app/api/auth/kakao/unlink`를 등록한다. https와 443 포트만 받는다.
+   - REST API 방식이라 JavaScript SDK 도메인이나 웹 도메인은 등록하지 않아도 된다.
 2. **Upstash(팀원이 Vercel 저장소 탭에서, 또는 이용자가 직접)**: Redis 데이터베이스를 도쿄 지역으로 만든다.
 3. **환경변수**: 아래 값을 `.env.local`(이용자)과 Vercel(팀원)에 넣는다.
    - `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET`, `KAKAO_ADMIN_KEY`
@@ -295,4 +296,4 @@
 ## 빌더에게 맡기는 것
 - 파일 나누기, 함수 이름, 안내 한 줄의 정확한 자리와 문구(해요체, DESIGN.md 말투).
 - 카카오 버튼 모양(카카오 로그인 디자인 가이드를 따른다).
-- 세션 서명 방식의 세부. Web Crypto HMAC이면 충분하다. 새 라이브러리는 `@upstash/redis` 말고는 넣지 않는다.
+- 세션 서명 방식의 세부. Web Crypto HMAC이면 충분하다. 새 라이브러리는 넣지 않는다.
