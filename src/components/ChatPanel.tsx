@@ -993,7 +993,7 @@ export default function ChatPanel({
             {mounted && !loggedIn && (
               <p className="mt-3 text-center text-sm text-ink-soft">
                 {profile.location || homeArea ? (
-                  <>지금은 {profile.location?.label ?? homeArea?.name} 기준이에요. 내 차까지 맞추려면 </>
+                  <>지금은 {profile.location?.label ?? homeArea?.name} 기준이에요. 더 정확한 맞춤 안내를 받으려면 </>
                 ) : (
                   <>
                     지금은 전국 기준이에요.{" "}
@@ -1004,7 +1004,7 @@ export default function ChatPanel({
                     >
                       위치 고르기
                     </button>
-                    를 하면 우리 동네 기준으로 알려 드려요. 내 차까지 맞추려면{" "}
+                    를 하면 우리 동네 기준으로 알려 드려요. 더 정확한 맞춤 안내를 받으려면{" "}
                   </>
                 )}
                 <Link href="/login" className="font-semibold text-ink underline underline-offset-4">
