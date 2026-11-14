@@ -8,7 +8,7 @@ import type { FuelReport } from "@/lib/fuelReport";
 import { amountName, amountQuery, wonName, type Amount } from "@/lib/fillAmount";
 import { addDays, forecastNextFill, MAX_RECORDS, MIN_RECORDS, type FillForecast } from "@/lib/fillForecast";
 import { fuelEconomy, measuredKmpl, readingBasis } from "@/lib/fuelEconomy";
-import { DEFAULT_PLACE } from "@/lib/places";
+import { DEFAULT_PLACE, initialPlace, MY, placeLabel, usablePlace } from "@/lib/places";
 import { priceCapNotice } from "@/lib/policy";
 import { fuelName, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
@@ -34,7 +34,7 @@ import {
   type PriceRow,
   type TaxImpact,
 } from "./AnswerCards";
-import { ConditionBar, initialPlace, MY, placeLabel, usablePlace } from "./ConditionBar";
+import { ConditionBar } from "./ConditionBar";
 import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary } from "./FillCards";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
