@@ -6,7 +6,8 @@ import { placeAt } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
 import type { LedgerEntry } from "@/lib/ledger";
 import { isKatec } from "@/lib/profile";
-import { sameStation } from "@/lib/stationName";
+import { effectivePrice, isExcluded, NO_PREFS, type Prefs } from "@/lib/discounts";
+import { sameStation, searchName } from "@/lib/stationName";
 
 export const FUEL_CODES: Record<string, string> = {
   휘발유: "B027",
@@ -188,11 +189,20 @@ export async function searchStations(name: string, area: string | null, count = 
   };
 }
 
+// 영수증에 적힌 주유소 이름으로 오피넷 주유소 하나를 찾는다(단골 점검). 이름이 맞는 곳, 없고 결과가 한 곳이면 그곳.
+export async function findStationByName(name: string, area: string | null) {
+  const query = searchName(name);
+  if (query.length < 2) return null;
+  const { stations, total } = await searchStations(query, area, 20);
+  const match = stations.find((station) => sameStation(name, station.name)) ?? (total === 1 ? stations[0] : null);
+  return match ? { id: match.id, name: match.name, brand: match.brand } : null;
+}
+
 const isAlttle = (brand: string) => brand.includes("알뜰");
 
 // 이 주유소가 동네에서 싼 편인지: 시군구 평균과의 차이, 반경 5km 안에서 몇 번째로 싼지.
 // 단골 점검과 '알뜰이 정말 싼지' 확인에 쓴다. 반경은 이 주유소에서 잰 직선 5km다.
-export async function stationStanding(id: string, fuel: string) {
+export async function stationStanding(id: string, fuel: string, prefs: Prefs = NO_PREFS) {
   const prodcd = FUEL_CODES[fuel];
   if (!prodcd) throw new RangeError("지원하지 않는 유종입니다.");
   const [row] = rows(await fetchOpinet("detailById", { id }));
@@ -201,6 +211,7 @@ export async function stationStanding(id: string, fuel: string) {
   const price = Number(priceRow?.PRICE);
   if (!priceRow || !(price > 0)) return { error: `${String(row.OS_NM)}에는 ${fuel} 가격이 없습니다.` };
   const brand = brandName(row.POLL_DIV_CO);
+  const paidPrice = effectivePrice(price, brand, prefs.discounts);
   const sigun = String(row.SIGUNCD ?? "");
   const x = Number(row.GIS_X_COOR);
   const y = Number(row.GIS_Y_COOR);
@@ -222,7 +233,9 @@ export async function stationStanding(id: string, fuel: string) {
     const count = others.length + 1;
     const rank = others.filter((item) => item.price < price).length + 1;
     const quarter = Math.max(1, Math.floor(count / 4));
-    const cheapest = [...others].sort((a, b) => a.price - b.price || a.distanceM - b.distanceM)[0] ?? null;
+    // '더 싼 곳'은 뺀 상표를 거르고 할인 반영 가격으로 고른다. 순위(rank)는 오피넷 가격 그대로다.
+    const options = withPrefs(others, prefs).stations;
+    const cheapest = [...options].sort((a, b) => a.paidPrice - b.paidPrice || a.distanceM - b.distanceM)[0] ?? null;
     nearby = {
       radiusKm: RADIUS_M / 1000,
       fetchedAtKst: kstTime(fetchedAt),
@@ -232,8 +245,17 @@ export async function stationStanding(id: string, fuel: string) {
       isCheapest: rank === 1,
       // 이 주유소보다 싼 곳 가운데 가장 싼 곳(이 주유소에서 잰 직선거리)
       cheaperOption:
-        cheapest && cheapest.price < price
-          ? { id: cheapest.id, name: cheapest.name, price: cheapest.price, distanceKm: toKm(cheapest.distanceM), cheaperByWon: price - cheapest.price }
+        cheapest && cheapest.paidPrice < paidPrice
+          ? {
+              id: cheapest.id,
+              name: cheapest.name,
+              brand: cheapest.brand,
+              price: cheapest.price,
+              discountWon: cheapest.discountWon,
+              paidPrice: cheapest.paidPrice,
+              distanceKm: toKm(cheapest.distanceM),
+              cheaperByWon: paidPrice - cheapest.paidPrice,
+            }
           : null,
     };
   }
@@ -247,6 +269,8 @@ export async function stationStanding(id: string, fuel: string) {
       goodStation: row.GOOD_YN === "Y",
       fuel,
       price,
+      discountWon: price - paidPrice,
+      paidPrice,
       updatedAt: tradeTime(priceRow.TRADE_DT, priceRow.TRADE_TM),
     },
     areaAverage,
@@ -255,26 +279,33 @@ export async function stationStanding(id: string, fuel: string) {
   };
 }
 
-export async function findCheapest(fuel: string, area: string, count = 5) {
+// 지역 최저가. 내 할인이나 뺀 상표가 있으면 10곳을 받아 거르고 할인 반영 가격 순으로 count곳을 고른다.
+export async function findCheapest(fuel: string, area: string, count = 5, prefs: Prefs = NO_PREFS) {
   const prodcd = FUEL_CODES[fuel];
   if (!prodcd || !isAreaCode(area)) {
     throw new RangeError("지원하지 않는 유종 또는 지역입니다.");
   }
   const name = await areaName(area);
-  const { body, fetchedAt } = await fetchOpinetTimed("lowTop10", { prodcd, area, cnt: String(count) });
-  return {
-    fuel,
-    area: name,
-    // 최저가 API에는 가격별 기준 시각이 없어, 오피넷에서 조회한 시각을 따로 준다(상세 정보의 기준 시각과 다름).
-    fetchedAt,
-    fetchedAtKst: kstTime(fetchedAt),
-    stations: rows(body).map((row) => ({
+  const personal = prefs.discounts.length > 0 || prefs.excludeBrands.length > 0;
+  const { body, fetchedAt } = await fetchOpinetTimed("lowTop10", { prodcd, area, cnt: String(personal ? 10 : count) });
+  const { stations, excludedCount } = withPrefs(
+    rows(body).map((row) => ({
       id: String(row.UNI_ID),
       name: String(row.OS_NM),
       brand: brandName(row.POLL_DIV_CD),
       price: Number(row.PRICE),
       address: String(row.NEW_ADR || row.VAN_ADR || ""),
     })),
+    prefs,
+  );
+  return {
+    fuel,
+    area: name,
+    // 최저가 API에는 가격별 기준 시각이 없어, 오피넷에서 조회한 시각을 따로 준다(상세 정보의 기준 시각과 다름).
+    fetchedAt,
+    fetchedAtKst: kstTime(fetchedAt),
+    excludedCount,
+    stations: stations.sort((a, b) => a.paidPrice - b.paidPrice).slice(0, count),
   };
 }
 
@@ -326,6 +357,19 @@ function aroundRows(body: unknown) {
 
 const toKm = (meters: number) => Math.round(meters / 100) / 10;
 
+// 내 할인과 뺀 상표 반영: 뺀 상표는 거르고(거른 수를 남긴다), 오피넷 가격(price)은 그대로 둔 채
+// 할인액(discountWon)과 할인 반영 가격(paidPrice)을 더한다. 순위는 paidPrice로 매긴다.
+function withPrefs<T extends { brand: string; price: number }>(list: T[], prefs: Prefs) {
+  const kept = list.filter((station) => !isExcluded(station.brand, prefs.excludeBrands));
+  return {
+    stations: kept.map((station) => {
+      const paidPrice = effectivePrice(station.price, station.brand, prefs.discounts);
+      return { ...station, discountWon: station.price - paidPrice, paidPrice };
+    }),
+    excludedCount: list.length - kept.length,
+  };
+}
+
 // 좌표가 속한 시군구. 오피넷에는 좌표로 지역을 찾는 기능이 없어, 반경 5km 안에서 가장 가까운 주유소의
 // 시군구 코드(상세 정보의 SIGUNCD)로 정한다. 시군구 경계 근처에서는 옆 시군구가 나올 수 있다.
 export async function areaAt(x: number, y: number) {
@@ -346,7 +390,7 @@ export async function areaAt(x: number, y: number) {
 }
 
 // 내 위치 반경 5km 안에서 가격이 낮은 순으로 최대 5곳.
-export async function findNearby(fuel: string, origin: Origin, count = 5) {
+export async function findNearby(fuel: string, origin: Origin, count = 5, prefs: Prefs = NO_PREFS) {
   const prodcd = FUEL_CODES[fuel];
   const place = resolveOrigin(origin);
   if (!prodcd || !place) {
@@ -359,6 +403,7 @@ export async function findNearby(fuel: string, origin: Origin, count = 5) {
     prodcd,
     sort: "1",
   });
+  const picked = withPrefs(aroundRows(body), prefs);
   return {
     fuel,
     place: place.name,
@@ -366,8 +411,9 @@ export async function findNearby(fuel: string, origin: Origin, count = 5) {
     fetchedAt,
     fetchedAtKst: kstTime(fetchedAt),
     distanceNote: "거리는 직선거리라 실제 도로는 더 깁니다.",
-    stations: aroundRows(body)
-      .sort((a, b) => a.price - b.price || a.distanceM - b.distanceM)
+    excludedCount: picked.excludedCount,
+    stations: picked.stations
+      .sort((a, b) => a.paidPrice - b.paidPrice || a.distanceM - b.distanceM)
       .slice(0, count)
       .map(({ distanceM, ...station }) => ({ ...station, distanceKm: toKm(distanceM) })),
   };
@@ -376,7 +422,13 @@ export async function findNearby(fuel: string, origin: Origin, count = 5) {
 // 실질비용: 기름값(가격 × 주유량)에 출발 위치에서 그 주유소까지 오가는 연료비를 더한 값.
 // 거리는 오피넷이 주는 직선거리라 실제 도로보다 짧다. 그래서 오가는 연료비는 적게 잡힌 값이다.
 // 금액(5만원어치)은 미리 리터로 바꿔(fill) 받는다. 같은 양을 넣을 때 어디가 덜 드는지 비교한다.
-export async function findByTotalCost(fuel: string, origin: Origin, fill: Fill = litersFill(DEFAULT_LITERS), kmpl = DEFAULT_KMPL) {
+export async function findByTotalCost(
+  fuel: string,
+  origin: Origin,
+  fill: Fill = litersFill(DEFAULT_LITERS),
+  kmpl = DEFAULT_KMPL,
+  prefs: Prefs = NO_PREFS,
+) {
   const { liters } = fill;
   const prodcd = FUEL_CODES[fuel];
   const place = resolveOrigin(origin);
@@ -397,9 +449,11 @@ export async function findByTotalCost(fuel: string, origin: Origin, fill: Fill =
     prodcd,
     sort: "1",
   });
-  const all = aroundRows(body).map(({ distanceM, ...station }) => {
-    const fillWon = Math.round(station.price * liters);
-    const tripWon = Math.round(((2 * distanceM) / 1000 / kmpl) * station.price);
+  // 내 할인이 있으면 넣는 기름도 오가는 기름도 할인 반영 가격으로 셈한다.
+  const picked = withPrefs(aroundRows(body), prefs);
+  const all = picked.stations.map(({ distanceM, ...station }) => {
+    const fillWon = Math.round(station.paidPrice * liters);
+    const tripWon = Math.round(((2 * distanceM) / 1000 / kmpl) * station.paidPrice);
     return { ...station, distanceKm: toKm(distanceM), fillWon, tripWon, totalWon: fillWon + tripWon };
   });
 
@@ -413,13 +467,14 @@ export async function findByTotalCost(fuel: string, origin: Origin, fill: Fill =
     fetchedAt,
     fetchedAtKst: kstTime(fetchedAt),
     distanceNote: "거리는 직선거리라 실제 도로는 더 깁니다.",
+    excludedCount: picked.excludedCount,
   };
   if (all.length === 0) {
     return { ...base, stations: [], cheapest: null, nearest: null, extraForCheapestWon: 0, breakEvenWonPerKm: null };
   }
 
   const byTotal = [...all].sort((a, b) => a.totalWon - b.totalWon || a.distanceKm - b.distanceKm);
-  const cheapest = [...all].sort((a, b) => a.price - b.price || a.distanceKm - b.distanceKm)[0];
+  const cheapest = [...all].sort((a, b) => a.paidPrice - b.paidPrice || a.distanceKm - b.distanceKm)[0];
   const nearest = [...all].sort((a, b) => a.distanceKm - b.distanceKm)[0];
   const best = byTotal[0];
   return {
@@ -430,7 +485,61 @@ export async function findByTotalCost(fuel: string, origin: Origin, fill: Fill =
     // 가장 싼 곳까지 가면 가장 덜 드는 곳보다 총비용이 얼마나 더 드는지. 같은 곳이면 0.
     extraForCheapestWon: cheapest.totalWon - best.totalWon,
     // 1km 더 멀면(왕복 2km) 드는 연료비를 주유량으로 나눈 값. 리터당 이만큼 싸야 더 가는 보람이 있다.
-    breakEvenWonPerKm: Math.round(((2 / kmpl) * best.price) / liters),
+    breakEvenWonPerKm: Math.round(((2 / kmpl) * best.paidPrice) / liters),
+  };
+}
+
+// 출퇴근 길(데모): 집과 회사에서 반경 5km를 한 번씩 조회해, 두 곳 모두에 나온 주유소를 '집까지 + 회사까지' 직선거리가
+// 짧은 순으로 고른다. 겹치는 곳이 없으면 집 근처와 회사 근처에서 할인 반영 가격이 가장 낮은 곳을 하나씩 준다.
+export async function findCommute(fuel: string, home: Origin, work: Origin, prefs: Prefs = NO_PREFS) {
+  const prodcd = FUEL_CODES[fuel];
+  const homePlace = resolveOrigin(home);
+  const workPlace = resolveOrigin(work);
+  if (!prodcd || !homePlace || !workPlace) {
+    throw new RangeError("지원하지 않는 유종이거나 집·회사 위치가 올바르지 않습니다.");
+  }
+  const around = (place: { x: number; y: number }) =>
+    fetchOpinetTimed("aroundAll", { x: String(place.x), y: String(place.y), radius: String(RADIUS_M), prodcd, sort: "1" });
+  const [atHome, atWork] = await Promise.all([around(homePlace), around(workPlace)]);
+  const homeRows = aroundRows(atHome.body);
+  const workRows = aroundRows(atWork.body);
+  const excluded = new Set([...homeRows, ...workRows].filter((s) => isExcluded(s.brand, prefs.excludeBrands)).map((s) => s.id));
+  const homeList = withPrefs(homeRows, prefs).stations;
+  const workList = withPrefs(workRows, prefs).stations;
+  const workById = new Map(workList.map((station) => [station.id, station]));
+  type Picked = (typeof homeList)[number];
+  const shape = (station: Picked, homeM: number | null, workM: number | null) => ({
+    id: station.id,
+    name: station.name,
+    brand: station.brand,
+    price: station.price,
+    discountWon: station.discountWon,
+    paidPrice: station.paidPrice,
+    homeKm: homeM === null ? null : toKm(homeM),
+    workKm: workM === null ? null : toKm(workM),
+  });
+  const overlap = homeList
+    .filter((station) => workById.has(station.id))
+    .map((station) => ({ station, homeM: station.distanceM, workM: workById.get(station.id)!.distanceM }))
+    .sort((a, b) => a.homeM + a.workM - (b.homeM + b.workM) || a.station.paidPrice - b.station.paidPrice)
+    .slice(0, 5)
+    .map(({ station, homeM, workM }) => shape(station, homeM, workM));
+  const cheapestOf = (list: Picked[]) => [...list].sort((a, b) => a.paidPrice - b.paidPrice || a.distanceM - b.distanceM)[0] ?? null;
+  const bestHome = overlap.length === 0 ? cheapestOf(homeList) : null;
+  const bestWork = overlap.length === 0 ? cheapestOf(workList) : null;
+  const fetchedAt = atHome.fetchedAt < atWork.fetchedAt ? atHome.fetchedAt : atWork.fetchedAt;
+  return {
+    fuel,
+    home: homePlace.name,
+    work: workPlace.name,
+    radiusKm: RADIUS_M / 1000,
+    fetchedAt,
+    fetchedAtKst: kstTime(fetchedAt),
+    excludedCount: excluded.size,
+    overlap,
+    nearHome: bestHome ? shape(bestHome, bestHome.distanceM, null) : null,
+    nearWork: bestWork ? shape(bestWork, null, bestWork.distanceM) : null,
+    distanceNote: "거리는 직선거리라 실제 길은 더 길 수 있습니다.",
   };
 }
 
