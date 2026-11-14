@@ -381,16 +381,18 @@ export default function ChatPanel({
   const endRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  // 대시보드의 '찍기' 버튼은 휴대폰에서 카메라를 바로 연다(capture). 입력창 사진 버튼은 앨범에서도 고를 수 있게 그대로 둔다.
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   // 대화 번호. 새 대화를 시작하면 올린다. 앞 대화의 늦게 온 답은 번호가 달라 붙이지 않는다.
   const threadRef = useRef(0);
   // 사진 고르기를 연 질문(영수증·계기판). 입력창 버튼이면 null. 사진을 고르기 전에 화면이 다시 그려지므로 상태로 둔다.
   const [photoQuestion, setPhotoQuestion] = useState<string | null>(null);
   // 대시보드 버튼으로 연 사진 고르기는 사진을 고른 뒤에 새 대화로 시작한다(취소하면 지금 대화를 그대로 둔다).
   const photoFreshRef = useRef(false);
-  const pickPhotoFor = (question: string | null, fresh = false) => {
+  const pickPhotoFor = (question: string | null, fresh = false, camera = false) => {
     setPhotoQuestion(question);
     photoFreshRef.current = fresh;
-    photoInputRef.current?.click();
+    (camera ? cameraInputRef : photoInputRef).current?.click();
   };
   useStored(alertStore, parseAlerts);
   useStored(watchStore, parseWatch);
@@ -671,6 +673,12 @@ export default function ChatPanel({
     }, photo?.preview);
   }
 
+  // 사진을 고르거나 찍으면 보낸다. 같은 사진을 다시 골라도 바뀜이 생기게 값을 비운다.
+  const onPhotoPicked = (event: React.ChangeEvent<HTMLInputElement>) => {
+    sendPhoto(event.target.files?.[0]);
+    event.target.value = "";
+  };
+
   async function sendPhoto(file: File | undefined) {
     if (!file || pending) return;
     const fresh = photoFreshRef.current;
@@ -783,7 +791,7 @@ export default function ChatPanel({
   useImperativeHandle(ref, () => ({
     run(command: PanelCommand) {
       if (command.kind === "photo") {
-        pickPhotoFor(command.question, true);
+        pickPhotoFor(command.question, true, true);
         return;
       }
       startThread();
@@ -1115,16 +1123,8 @@ export default function ChatPanel({
         {!isPanel && (messages.length > 0 || busy) && <SuggestionRow suggestions={suggestions} busy={busy} />}
 
         <form onSubmit={submit} className="flex items-center gap-1 rounded-full bg-ground p-1.5 shadow-raised">
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(event) => {
-              sendPhoto(event.target.files?.[0]);
-              event.target.value = "";
-            }}
-          />
+          <input ref={photoInputRef} type="file" accept="image/*" hidden onChange={onPhotoPicked} />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPhotoPicked} />
           <button
             type="button"
             onClick={() => pickPhotoFor(null)}
