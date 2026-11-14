@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { prefsFrom } from "@/lib/discounts";
 import { AMOUNT_ERROR, fillRequestOrDefault, resolveFill } from "@/lib/fillPrice";
 import { OpinetError } from "@/lib/opinet";
 import { originFrom } from "@/lib/origin";
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: "오늘 평균 판매가를 불러오지 못해 금액을 리터로 바꾸지 못했어요. 잠시 뒤 다시 해 주세요." }, { status: 502 });
     }
     return Response.json(
-      await findByTotalCost(fuel, originFrom(searchParams), fill, Number(searchParams.get("kmpl") ?? DEFAULT_KMPL)),
+      await findByTotalCost(fuel, originFrom(searchParams), fill, Number(searchParams.get("kmpl") ?? DEFAULT_KMPL), prefsFrom(searchParams)),
     );
   } catch (error) {
     if (error instanceof RangeError) {
