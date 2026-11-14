@@ -12,6 +12,7 @@ import { addAlert, alertStore, MAX_ALERTS, parseAlerts, removeAlert, type SavedA
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
 import { fuelName, signedIn } from "@/lib/profile";
 import { parseWatch, saveWatch, watchStore, type Watch } from "@/lib/watchSettings";
+import { loadAreas, type Area } from "./areaApi";
 import { FillLogCard } from "./FillCards";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
 import { useFill, useFullLiters } from "./useFill";
@@ -25,17 +26,8 @@ const MAX_WON = 3000;
 
 const PRICE_FUELS = ["휘발유", "경유", "자동차부탄"];
 
-type Area = { code: string; name: string };
 // 내 지역이 없을 때 처음 보여 줄 지역(시연 지역)
 const DEFAULT_AREA: Area = { code: "1831", name: "울산 울주군" };
-
-// 오피넷 지역 목록. sido를 비우면 시도, 시도 코드를 주면 그 시도의 시군구.
-async function loadAreas(sido = ""): Promise<Area[]> {
-  const response = await fetch(`/api/areas${sido ? `?sido=${sido}` : ""}`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !Array.isArray(body?.areas)) throw new Error();
-  return body.areas;
-}
 
 function Chevron() {
   return (

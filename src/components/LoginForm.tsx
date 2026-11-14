@@ -17,12 +17,11 @@ import {
 } from "@/lib/fuelEconomy";
 import { inKorea, toKatec } from "@/lib/katec";
 import { cleanText, fuelName, GUEST, LIMITS, PROFILE_FUELS, profileStore, saveProfile, signedIn, type Profile } from "@/lib/profile";
+import { loadAreas, type Area } from "./areaApi";
 import { CameraIcon, LocateIcon } from "./icons";
 import { shrinkPhoto } from "./photo";
 import { useFullLiters } from "./useFill";
 import { useMounted, useProfile } from "./useStored";
-
-type Area = { code: string; name: string };
 
 const FIELD =
   "w-full min-w-0 rounded-2xl bg-ground px-4 py-3 text-[15px] shadow-inset-sm placeholder:text-ink-soft focus-visible:outline-offset-1";
@@ -62,13 +61,6 @@ async function readDashboardKmpl(file: File): Promise<DashboardRead> {
   } catch {
     return { state: "note", text: "사진을 보내지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요." };
   }
-}
-
-async function loadAreas(sido = ""): Promise<Area[]> {
-  const response = await fetch(`/api/areas${sido ? `?sido=${sido}` : ""}`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !Array.isArray(body?.areas)) throw new Error(body?.error ?? "지역 목록을 불러오지 못했어요.");
-  return body.areas;
 }
 
 const koreanDate = (date: string) => {
