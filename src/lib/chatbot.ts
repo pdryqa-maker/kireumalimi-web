@@ -13,6 +13,7 @@ import { KEROSENE_APP } from "@/lib/kerosene";
 import { MAX_ODOMETER_KM, type LedgerEntry } from "@/lib/ledger";
 import { checkNumbers, collectAllowed } from "@/lib/numbers";
 import { PLACES } from "@/lib/places";
+import { cleanAnswerText } from "@/lib/answerText";
 import { CAP_FUELS, FUEL_TAX_CUT, MAX_LITERS, priceCapNotice, taxCutImpact } from "@/lib/policy";
 import { fuelName, GUEST, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
 import {
@@ -735,11 +736,14 @@ export async function answer(
       continue;
     }
     if (toolUses.length === 0) {
-      const text = response.content
+      const raw = response.content
         .filter((block): block is Anthropic.Beta.BetaTextBlock => block.type === "text")
         .map((block) => block.text)
         .join("")
         .trim();
+      // 내부 태그가 섞여 나오면 걸러 내고, 어느 모델이 답했는지 남겨 원인을 찾을 수 있게 한다.
+      const text = cleanAnswerText(raw);
+      if (text !== raw) console.warn("답 글의 내부 태그를 걸러 냄", { model: response.model });
       const alert = proposals.alerts.at(-1) ?? null;
       const fill = proposals.fills.at(-1) ?? null;
       const dashboard = proposals.dashboards.at(-1) ?? null;
