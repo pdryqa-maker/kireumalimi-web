@@ -6,6 +6,7 @@ import { placeAt } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
 import type { LedgerEntry } from "@/lib/ledger";
 import { isKatec } from "@/lib/profile";
+import { sameStation } from "@/lib/stationName";
 
 export const FUEL_CODES: Record<string, string> = {
   휘발유: "B027",
@@ -431,18 +432,6 @@ export async function findByTotalCost(fuel: string, origin: Origin, fill: Fill =
     // 1km 더 멀면(왕복 2km) 드는 연료비를 주유량으로 나눈 값. 리터당 이만큼 싸야 더 가는 보람이 있다.
     breakEvenWonPerKm: Math.round(((2 / kmpl) * best.price) / liters),
   };
-}
-
-// 영수증 이름과 오피넷 이름 맞추기. 회사 표시와 띄어쓰기를 빼고 한쪽이 다른 쪽을 품으면 같은 주유소로 본다.
-const coreName = (name: string) =>
-  name
-    .replace(/\(주\)|㈜|주식회사|\(유\)|유한회사|\(합\)|\s+/g, "")
-    .replace(/주유소$/, "");
-
-function sameStation(receiptName: string, stationName: string) {
-  const a = coreName(receiptName);
-  const b = coreName(stationName);
-  return a.length >= 2 && b.length >= 2 && (a.includes(b) || b.includes(a));
 }
 
 const BIG_GAP_WON = 100;
