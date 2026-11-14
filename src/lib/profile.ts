@@ -1,6 +1,7 @@
 // 간편 로그인으로 받은 내 정보. 비밀번호 없이 이 브라우저에만 저장한다(실제 서비스는 카카오 로그인으로 제안).
 // 서버는 질문을 받을 때 이 값을 다시 검사해서 쓴다. 정확한 좌표는 AI에 보내지 않고 조회에만 쓴다.
 import { browserStore } from "./browserStore";
+import { cleanBrands, cleanDiscounts, type BrandKey, type Discount, type Prefs } from "./discounts";
 import { cleanAmount, DEFAULT_AMOUNT, DEFAULT_FULL_LITERS, isLiters, type Amount } from "./fillAmount";
 import {
   cleanCar,
@@ -35,6 +36,12 @@ export type Profile = {
   kmpl: number; // 계산에 쓰는 연비. 차종·크기로 정하면 저장할 때마다 다시 셈한다
   location: MyPlace | null;
   area: MyArea | null;
+  monthlyKm: number | null; // 한 달 주행거리(km). 기록이 모자랄 때 다음 주유일을 셈한다
+  discounts: Discount[]; // 주유 할인(상표, 리터당 원). 최대 3개
+  excludeBrands: BrandKey[]; // 추천에서 빼고 싶은 상표
+  ureaNeeded: boolean; // 요소수가 필요한 경유차인지
+  home: MyPlace | null; // 자주 가는 곳: 집
+  work: MyPlace | null; // 자주 가는 곳: 회사
 };
 
 export const PROFILE_FUELS = ["휘발유", "경유", "자동차부탄"];
@@ -53,8 +60,19 @@ export const GUEST: Profile = {
   kmpl: DEFAULT_KMPL,
   location: null,
   area: null,
+  monthlyKm: null,
+  discounts: [],
+  excludeBrands: [],
+  ureaNeeded: false,
+  home: null,
+  work: null,
 };
-export const LIMITS = { name: 12, label: 12, areaName: 30, minKmpl: 3, maxKmpl: 30 }; // 연비 범위는 fuelEconomy.ts와 같다
+export const LIMITS = { name: 12, label: 12, areaName: 30, minKmpl: 3, maxKmpl: 30, minMonthlyKm: 100, maxMonthlyKm: 10_000 }; // 연비 범위는 fuelEconomy.ts와 같다
+
+function cleanMonthlyKm(value: unknown): number | null {
+  const km = Math.round(Number(value));
+  return value !== null && value !== "" && km >= LIMITS.minMonthlyKm && km <= LIMITS.maxMonthlyKm ? km : null;
+}
 
 // 우리나라를 넉넉히 감싸는 KATEC 범위(제주 남단 ~ 독도). 이 밖이면 오피넷에 물을 수 없다.
 export const KATEC_BOUNDS = { minX: 50_000, maxX: 760_000, minY: 0, maxY: 700_000 };
@@ -125,6 +143,12 @@ export function cleanProfile(value: unknown): Profile {
     kmpl: economy.kmpl,
     location: cleanPlace(item.location),
     area: cleanArea(item.area),
+    monthlyKm: cleanMonthlyKm(item.monthlyKm),
+    discounts: cleanDiscounts(item.discounts),
+    excludeBrands: cleanBrands(item.excludeBrands),
+    ureaNeeded: fuel === "경유" && item.ureaNeeded === true, // 요소수는 경유차만
+    home: cleanPlace(item.home),
+    work: cleanPlace(item.work),
   };
 }
 
@@ -140,3 +164,4 @@ export function parseProfile(raw: string) {
 
 export const saveProfile = (profile: Profile) => profileStore.write(cleanProfile(profile));
 export const signedIn = (profile: Profile) => profile.name !== "";
+export const prefsOf = (profile: Profile): Prefs => ({ discounts: profile.discounts, excludeBrands: profile.excludeBrands });
