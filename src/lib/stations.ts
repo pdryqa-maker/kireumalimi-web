@@ -7,7 +7,7 @@ import { MAX_LITERS } from "@/lib/policy";
 import type { LedgerEntry } from "@/lib/ledger";
 import { isKatec } from "@/lib/profile";
 import { effectivePrice, isExcluded, NO_PREFS, type Prefs } from "@/lib/discounts";
-import { sameStation, searchName } from "@/lib/stationName";
+import { coreName, sameStation, searchName } from "@/lib/stationName";
 
 export const FUEL_CODES: Record<string, string> = {
   휘발유: "B027",
@@ -189,12 +189,17 @@ export async function searchStations(name: string, area: string | null, count = 
   };
 }
 
-// 영수증에 적힌 주유소 이름으로 오피넷 주유소 하나를 찾는다(단골 점검). 이름이 맞는 곳, 없고 결과가 한 곳이면 그곳.
+// 영수증에 적힌 주유소 이름으로 오피넷 주유소 하나를 찾는다(단골 점검). 이름이 꼭 같은 곳, 없으면 한쪽이 다른 쪽을 품는 곳이
+// 한 곳뿐일 때 그곳, 그것도 없고 결과가 한 곳이면 그곳. 여러 곳에 걸리면 아무 곳이나 고르지 않는다.
 export async function findStationByName(name: string, area: string | null) {
   const query = searchName(name);
   if (query.length < 2) return null;
   const { stations, total } = await searchStations(query, area, 20);
-  const match = stations.find((station) => sameStation(name, station.name)) ?? (total === 1 ? stations[0] : null);
+  const similar = stations.filter((station) => sameStation(name, station.name));
+  const match =
+    stations.find((station) => coreName(station.name) === coreName(name)) ??
+    (similar.length === 1 ? similar[0] : null) ??
+    (similar.length === 0 && total === 1 ? stations[0] : null);
   return match ? { id: match.id, name: match.name, brand: match.brand } : null;
 }
 

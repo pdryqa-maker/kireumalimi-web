@@ -41,7 +41,8 @@ import {
   type TaxImpact,
 } from "./AnswerCards";
 import { ConditionBar, initialPlace, MY, placeLabel, usablePlace } from "./ConditionBar";
-import { FillLogCard, ForecastCard, forecastMessage, ReportCard, reportSummary } from "./FillCards";
+import { FillLogCard, ForecastCard, ReportCard, reportSummary } from "./FillCards";
+import { forecastMessage } from "./stationText";
 import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 import { CameraIcon, ChartIcon, PinIcon, PumpIcon, ReceiptIcon } from "./icons";

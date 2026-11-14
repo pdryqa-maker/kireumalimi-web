@@ -8,21 +8,12 @@ import { MAX_ODOMETER_KM } from "@/lib/ledger";
 import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
 import type { findByTotalCost, findCommute } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
+import { discountLine, excludedNote } from "./stationText";
 
 export type CostResult = Awaited<ReturnType<typeof findByTotalCost>>;
 export type CommuteResult = Awaited<ReturnType<typeof findCommute>>;
 
-// 내 할인이 들어간 주유소: "오피넷 1,680원 · S-OIL 할인 −100원". 할인이 없으면 null.
-export const discountLine = (station: { brand: string; price: number; discountWon?: number }) =>
-  station.discountWon ? `오피넷 ${won(station.price)}원 · ${station.brand} 할인 −${won(station.discountWon)}원` : null;
-
-// 뺀 상표 안내: 목록이 있으면 몇 곳 뺐는지, 비었으면 남은 곳이 없다고.
-export const excludedNote = (excludedCount: number | undefined, empty: boolean, radiusKm?: number) =>
-  !excludedCount
-    ? null
-    : empty
-      ? `뺀 상표를 빼니 ${radiusKm ? `반경 ${radiusKm}km 안에 ` : ""}남은 곳이 없어요(${excludedCount}곳 뺌).`
-      : `뺀 상표 ${excludedCount}곳은 넣지 않았어요.`;
+export { discountLine, excludedNote };
 export type CostStation = CostResult["stations"][number];
 // 제도 금액은 한 번에 넣는 양(fill)으로 셈한다. 금액을 리터로 바꿀 평균가를 못 받으면 fill이 null이고 리터당 금액만 보여 준다.
 export type TaxImpact = Exclude<ReturnType<typeof taxCutImpact>, { error: string }> & { fill: Fill | null };

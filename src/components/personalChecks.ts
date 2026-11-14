@@ -2,7 +2,7 @@
 
 // 누를 때만 오피넷을 부르는 개인 점검: 단골 주유소(동네 평균·근처 더 싼 곳), 요소수 재고, 달별 시도 평균 비교.
 // 내 기록 요약과 알림 탭의 '지금 점검'이 함께 쓴다.
-import type { FavoriteCheck, UreaCheck } from "@/lib/conditions";
+import { josa, type FavoriteCheck, type UreaCheck } from "@/lib/conditions";
 import { prefsQuery } from "@/lib/discounts";
 import { DEMO_REGION } from "@/lib/places";
 import { prefsOf, type Profile } from "@/lib/profile";
@@ -28,7 +28,7 @@ export async function checkFavorite(name: string, profile: Profile, monthly: { l
   const { ok, body, error } = await getJson(`/api/stations/favorite?${params}`, FAILED);
   if (!ok) return { error };
   if (!body?.found) {
-    return { error: `오피넷에서 '${name}'을 찾지 못했어요. 탐색의 주유소 점검에서 이름을 바꿔 찾아 보세요.`, notFound: true };
+    return { error: `오피넷에서 '${name}'${josa(name, "을", "를")} 찾지 못했어요. 탐색의 주유소 점검에서 이름을 바꿔 찾아 보세요.`, notFound: true };
   }
   const standing = body.standing;
   if (!standing || typeof standing.error === "string") return { error: standing?.error ?? FAILED };
