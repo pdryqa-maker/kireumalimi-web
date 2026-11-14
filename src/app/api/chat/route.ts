@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { answer, type ChatImage, type ChatTurn } from "@/lib/chatbot";
+import { answer, cleanConditions, type ChatImage, type ChatTurn } from "@/lib/chatbot";
 import { cleanLedger } from "@/lib/ledger";
 import { cleanProfile } from "@/lib/profile";
 import { limitByClient, limitDaily } from "@/lib/rateLimit";
@@ -59,8 +59,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    // 내 정보와 주유 장부는 브라우저가 보낸 값이라 서버에서 다시 검사해 쓴다.
-    return Response.json(await answer(body.messages, cleanProfile(body.profile), image, cleanLedger(body.ledger)));
+    // 내 정보, 주유 장부, 화면 조건은 브라우저가 보낸 값이라 서버에서 다시 검사해 쓴다.
+    const profile = cleanProfile(body.profile);
+    return Response.json(
+      await answer(body.messages, profile, image, cleanLedger(body.ledger), cleanConditions(body.conditions, profile)),
+    );
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
       return Response.json({ error: "Claude API 키를 확인해 주세요." }, { status: 500 });
