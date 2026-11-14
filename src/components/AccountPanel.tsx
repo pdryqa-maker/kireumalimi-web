@@ -1,11 +1,16 @@
 "use client";
 
-// 내 정보 화면의 계정 부분. part="top"은 머리말 아래(게스트: 로그인·가입 칸), part="actions"는 버튼 줄(로그아웃, 회원 탈퇴).
+// 내 정보 화면의 계정 부분.
+// - AccountTabs: 게스트가 보는 [로그인 | 가입하기] 탭
+// - LoginBox: 로그인 탭. 아이디와 비밀번호만 받는다
+// - SignupFields: 가입 탭 맨 위의 아이디·비밀번호 칸. 아래 내 정보 칸과 한 양식으로 함께 보낸다(LoginForm)
+// - AccountActions: 로그인한 사람의 버튼 줄(로그아웃, 회원 탈퇴)
+// 비밀번호 칸에는 지금까지 친 글자를 보여 주는 단추가 있다.
 // 비밀번호 찾기는 없다(나중에 카카오톡 채널로 옮긴다). 화면에도 그 안내를 두지 않는다.
 import { useId, useState } from "react";
 import { logoutAccount, signIn, withdrawAccount } from "@/lib/accountSync";
 import { savedLedgerAll } from "@/lib/savedLedger";
-import { useAccount } from "./useAccount";
+import { EyeIcon, EyeOffIcon } from "./icons";
 
 const FIELD =
   "w-full min-w-0 rounded-2xl bg-ground px-4 py-3 text-[15px] shadow-inset-sm placeholder:text-ink-soft focus-visible:outline-offset-1";
@@ -22,47 +27,135 @@ const MESSAGES = {
   withdrawFailed: "탈퇴하지 못했어요. 잠시 뒤 다시 해 주세요.",
 };
 
-export default function AccountPanel({ part }: { part: "top" | "actions" }) {
-  const account = useAccount();
-  if (part === "top") {
-    if (account.status === "unknown") return <div aria-hidden="true" className="mt-6 min-h-[19.5rem]" />;
-    if (account.status === "unavailable") {
-      return <p className="mt-6 rounded-2xl bg-canvas px-4 py-3 text-sm text-ink-soft">로그인 준비 중이에요.</p>;
-    }
-    if (account.status === "guest") return <SignInBox />;
-    return null;
-  }
-  return account.status === "account" ? <AccountActions /> : null;
+export type AccountTab = "login" | "signup";
+export type Credentials = { id: string; password: string; confirm: string };
+export const NO_CREDENTIALS: Credentials = { id: "", password: "", confirm: "" };
+
+export const cleanId = (id: string) => id.trim().toLowerCase();
+
+// 가입할 때 아이디·비밀번호를 서버에 보내기 전에 본다. 맞으면 null, 틀리면 화면에 보일 문구.
+export function checkCredentials({ id, password, confirm }: Credentials): string | null {
+  if (!ID_RULE.test(cleanId(id))) return MESSAGES.badId;
+  if (password.length < 8 || password.length > 64) return MESSAGES.badPassword;
+  if (password !== confirm) return MESSAGES.mismatch;
+  return null;
 }
 
-function SignInBox() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+export const tabId = (base: string, tab: AccountTab) => `${base}-tab-${tab}`;
+export const panelId = (base: string, tab: AccountTab) => `${base}-panel-${tab}`;
+
+export function AccountTabs({ base, tab, onChoose }: { base: string; tab: AccountTab; onChoose: (tab: AccountTab) => void }) {
+  return (
+    <div role="tablist" aria-label="로그인 또는 가입" className="mt-6 inline-flex rounded-full bg-canvas p-1">
+      {(["login", "signup"] as const).map((item) => (
+        <button
+          key={item}
+          id={tabId(base, item)}
+          type="button"
+          role="tab"
+          aria-selected={tab === item}
+          aria-controls={panelId(base, item)}
+          onClick={() => onChoose(item)}
+          className={`rounded-full px-4 py-1.5 text-sm font-semibold ${tab === item ? "bg-ground shadow-raised-sm" : "text-ink-soft"}`}
+        >
+          {item === "login" ? "로그인" : "가입하기"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function IdInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return (
+    <div>
+      <label htmlFor={id} className="text-sm text-ink-soft">
+        아이디
+      </label>
+      <input
+        id={id}
+        name="username"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        maxLength={20}
+        required
+        placeholder={placeholder}
+        className={`${FIELD} mt-1.5`}
+      />
+    </div>
+  );
+}
+
+// 비밀번호 칸. 눈 모양 단추를 누르면 친 글자를 그대로 보여 주고, 다시 누르면 가린다.
+function PasswordInput({
+  id,
+  name,
+  label,
+  value,
+  onChange,
+  autoComplete,
+  placeholder,
+}: {
+  id: string;
+  name: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: "current-password" | "new-password";
+  placeholder?: string;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div>
+      <label htmlFor={id} className="text-sm text-ink-soft">
+        {label}
+      </label>
+      <div className="relative mt-1.5">
+        <input
+          id={id}
+          name={name}
+          type={shown ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={64}
+          required
+          placeholder={placeholder}
+          className={`${FIELD} pr-14`}
+        />
+        <button
+          type="button"
+          onClick={() => setShown((on) => !on)}
+          aria-pressed={shown}
+          aria-controls={id}
+          aria-label={`${label} 보기`}
+          className="absolute inset-y-0 right-1.5 my-auto flex size-11 items-center justify-center rounded-full text-ink-soft focus-visible:outline-offset-0"
+        >
+          {shown ? <EyeOffIcon /> : <EyeIcon />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function LoginBox() {
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const ids = useId();
-  const signup = mode === "signup";
-
-  function choose(next: "login" | "signup") {
-    setMode(next);
-    setError("");
-    setConfirm("");
-  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const cleanId = id.trim().toLowerCase();
-    if (signup) {
-      if (!ID_RULE.test(cleanId)) return setError(MESSAGES.badId);
-      if (password.length < 8 || password.length > 64) return setError(MESSAGES.badPassword);
-      if (password !== confirm) return setError(MESSAGES.mismatch);
-    }
     setBusy(true);
     setError("");
-    const result = await signIn(mode, cleanId, password);
+    const result = await signIn("login", cleanId(id), password);
     setBusy(false);
     if (!result.ok) return setError(result.error);
     // 성공하면 계정 상태가 바뀌어 이 칸은 내 정보 화면으로 바뀐다. 안내 한 줄이 뜨는 화면 위쪽으로 올린다
@@ -70,92 +163,51 @@ function SignInBox() {
   }
 
   return (
-    <div className="mt-6">
-      <div role="tablist" aria-label="로그인 또는 가입" className="inline-flex rounded-full bg-canvas p-1">
-        {(["login", "signup"] as const).map((item) => (
-          <button
-            key={item}
-            type="button"
-            role="tab"
-            aria-selected={mode === item}
-            onClick={() => choose(item)}
-            className={`rounded-full px-4 py-1.5 text-sm font-semibold ${mode === item ? "bg-ground shadow-raised-sm" : "text-ink-soft"}`}
-          >
-            {item === "login" ? "로그인" : "가입하기"}
-          </button>
-        ))}
-      </div>
-      <form onSubmit={submit} className="mt-4 space-y-3" aria-label={signup ? "가입하기" : "로그인"} noValidate>
-        <div>
-          <label htmlFor={`${ids}-id`} className="text-sm text-ink-soft">
-            아이디
-          </label>
-          <input
-            id={`${ids}-id`}
-            name="username"
-            value={id}
-            onChange={(event) => setId(event.target.value)}
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={20}
-            required
-            placeholder={signup ? "영문·숫자 4~20자" : undefined}
-            className={`${FIELD} mt-1.5`}
-          />
-        </div>
-        <div>
-          <label htmlFor={`${ids}-pw`} className="text-sm text-ink-soft">
-            비밀번호
-          </label>
-          <input
-            id={`${ids}-pw`}
-            name="password"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            autoComplete={signup ? "new-password" : "current-password"}
-            maxLength={64}
-            required
-            placeholder={signup ? "8자 이상" : undefined}
-            className={`${FIELD} mt-1.5`}
-          />
-        </div>
-        {signup && (
-          <div>
-            <label htmlFor={`${ids}-confirm`} className="text-sm text-ink-soft">
-              비밀번호 확인
-            </label>
-            <input
-              id={`${ids}-confirm`}
-              name="password-confirm"
-              type="password"
-              value={confirm}
-              onChange={(event) => setConfirm(event.target.value)}
-              autoComplete="new-password"
-              maxLength={64}
-              required
-              className={`${FIELD} mt-1.5`}
-            />
-          </div>
-        )}
-        {error && (
-          <p role="alert" className="text-sm font-medium">
-            {error}
-          </p>
-        )}
-        <button type="submit" disabled={busy} className={`${PRIMARY} mt-1`}>
-          {busy ? "확인하는 중…" : signup ? "가입하고 로그인" : "로그인"}
-        </button>
-      </form>
-      <div className="mt-8 border-t border-hairline pt-6">
-        <p className="text-sm leading-relaxed text-ink-soft">로그인하지 않아도 아래 내 정보를 이 브라우저에만 저장해 쓸 수 있어요.</p>
-      </div>
-    </div>
+    <form onSubmit={submit} className="mt-4 space-y-3" aria-label="로그인" noValidate>
+      <IdInput id={`${ids}-id`} value={id} onChange={setId} />
+      <PasswordInput id={`${ids}-pw`} name="password" label="비밀번호" value={password} onChange={setPassword} autoComplete="current-password" />
+      {error && (
+        <p role="alert" className="text-sm font-medium">
+          {error}
+        </p>
+      )}
+      <button type="submit" disabled={busy} className={`${PRIMARY} mt-1`}>
+        {busy ? "확인하는 중…" : "로그인"}
+      </button>
+    </form>
   );
 }
 
-function AccountActions() {
+// 가입 탭 맨 위. 값은 LoginForm이 들고, 보낼 때 checkCredentials로 본다.
+export function SignupFields({ value, onChange }: { value: Credentials; onChange: (next: Credentials) => void }) {
+  const ids = useId();
+  const set = (patch: Partial<Credentials>) => onChange({ ...value, ...patch });
+  return (
+    <fieldset className="mt-6 space-y-3">
+      <legend className="text-base font-semibold">아이디와 비밀번호</legend>
+      <IdInput id={`${ids}-id`} value={value.id} onChange={(id) => set({ id })} placeholder="영문·숫자 4~20자" />
+      <PasswordInput
+        id={`${ids}-pw`}
+        name="password"
+        label="비밀번호"
+        value={value.password}
+        onChange={(password) => set({ password })}
+        autoComplete="new-password"
+        placeholder="8자 이상"
+      />
+      <PasswordInput
+        id={`${ids}-confirm`}
+        name="password-confirm"
+        label="비밀번호 확인"
+        value={value.confirm}
+        onChange={(confirm) => set({ confirm })}
+        autoComplete="new-password"
+      />
+    </fieldset>
+  );
+}
+
+export function AccountActions() {
   const [busy, setBusy] = useState(false);
   const [logoutProblem, setLogoutProblem] = useState<"unsynced" | "failed" | null>(null);
   const [confirming, setConfirming] = useState<number | null>(null); // 지울 주유 기록 수

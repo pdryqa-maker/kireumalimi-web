@@ -130,3 +130,18 @@ export const ChartIcon = (props: IconProps) => (
     <path d="m7.5 14.5 3.5-4 3 2.5 4.5-6" />
   </Svg>
 );
+
+export const EyeIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
+
+export const EyeOffIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12" />
+    <circle cx="12" cy="12" r="3" />
+    <path d="M4 4l16 16" />
+  </Svg>
+);
