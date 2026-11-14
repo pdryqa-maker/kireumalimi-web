@@ -1,7 +1,6 @@
 "use client";
 
 // 실질비용, 제도 변경 알림 미리보기, 가격 알림 조건 카드. 기존 카드와 같은 재질(솟은 카드, 눌린 태그)을 쓴다.
-import Link from "next/link";
 import { useState } from "react";
 import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
 import type { Fill } from "@/lib/fillAmount";
@@ -459,14 +458,13 @@ const ODOMETER_STATUS_TEXT: Record<Exclude<AlertStatus, "proposed">, string> = {
   dismissed: "주유 기록에 넣지 않았어요",
 };
 
-// 계기판 사진에서 읽은 누적 주행거리와 평균 연비. 평균 연비는 내 연비로 쓸 수 있고(로그인했을 때),
+// 계기판 사진에서 읽은 누적 주행거리와 평균 연비. 평균 연비는 이 자리에서 바로 내 연비로 쓸 수 있고(로그인하지 않아도 이 브라우저에 남는다),
 // 주행거리는 그날 주유 기록에 붙여 가득→가득 실측 연비에 쓴다. 그날 기록이 없으면 영수증 카드에 채워 준다.
 export function DashboardCard({
   dashboard,
   kmplStatus,
   odometerStatus,
   current,
-  signedIn,
   hasFill,
   onUseKmpl,
   onSaveOdometer,
@@ -476,7 +474,6 @@ export function DashboardCard({
   kmplStatus: AlertStatus;
   odometerStatus: AlertStatus;
   current: { kmpl: number; basis: string };
-  signedIn: boolean;
   hasFill: boolean;
   onUseKmpl: () => void;
   onSaveOdometer: (full: boolean) => void;
@@ -505,14 +502,7 @@ export function DashboardCard({
             지금 내 연비는 <span className="font-semibold tabular-nums">{current.kmpl}km/L</span>예요
             <span className="text-ink-soft">({current.basis})</span>.
           </p>
-          {!signedIn ? (
-            <p className="mt-2 text-sm text-ink-soft">
-              <Link href="/login" className="underline underline-offset-4">
-                로그인
-              </Link>
-              하면 이 평균 연비를 내 연비로 쓸 수 있어요.
-            </p>
-          ) : kmplStatus === "proposed" ? (
+          {kmplStatus === "proposed" ? (
             <button type="button" onClick={onUseKmpl} disabled={busy} className={`mt-2.5 ${PRIMARY}`}>
               평균 연비 {dashboard.averageKmpl}km/L를 내 연비로 쓰기
             </button>

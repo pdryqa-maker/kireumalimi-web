@@ -758,7 +758,7 @@ export default function ChatPanel({
   function applyMeasured() {
     const reading = measuredKmpl(ledgerForServer());
     const known = profile.reading;
-    if (!reading || !loggedIn) return;
+    if (!reading) return;
     if (known?.kind === "measured" && known.date === reading.date && known.from === reading.from && known.kmpl === reading.kmpl) return;
     const manual = profile.kmplSource === "manual";
     const stored = saveProfile({ ...profile, reading, kmplSource: manual ? "manual" : "measured" });
@@ -926,7 +926,6 @@ export default function ChatPanel({
                 kmplStatus={message.kmplStatus}
                 odometerStatus={message.odometerStatus}
                 current={economy}
-                signedIn={loggedIn}
                 hasFill={knownFills.some((entry) => entry.date === message.dashboard.date)}
                 busy={busy}
                 onUseKmpl={() => applyDashboardKmpl(message.id, message.dashboard)}
