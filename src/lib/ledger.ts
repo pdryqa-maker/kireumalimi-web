@@ -1,5 +1,5 @@
-// 주유 장부. 영수증이나 주유 기록 카드로 넣은 주유를 최근 30번까지 이 브라우저에 남긴다.
-// 월간 리포트와 주유소 점검이 쓴다. 서버는 브라우저가 보낸 값을 cleanLedger로 다시 검사해서 쓴다.
+// 주유 장부. 영수증이나 주유 기록 카드로 넣은 주유를 최근 100번까지 이 브라우저에 남긴다.
+// 월간 리포트와 주유소 점검이 쓰고, 서버와 AI로는 최대 30번만 보낸다. 서버는 브라우저가 보낸 값을 cleanLedger로 다시 검사해서 쓴다.
 import { MAX_LITERS } from "./policy";
 
 export type LedgerEntry = {
@@ -12,7 +12,8 @@ export type LedgerEntry = {
   odometerKm: number | null; // 그때 계기판의 누적 주행거리(km)
 };
 
-export const MAX_LEDGER = 30;
+export const MAX_LEDGER = 30; // 서버·AI로 보내는 최대 주유 수
+export const MAX_SAVED_LEDGER = 100; // 이 브라우저에 남기는 최대 주유 수
 export const MAX_ODOMETER_KM = 2_000_000;
 
 const positiveInt = (value: unknown, max: number) =>
@@ -48,13 +49,13 @@ export function cleanEntry(value: unknown): LedgerEntry | null {
   };
 }
 
-// 같은 날 기록은 나중 것을 남기고, 날짜순으로 최근 30번만 쓴다.
-export function cleanLedger(value: unknown): LedgerEntry[] {
+// 같은 날 기록은 나중 것을 남기고, 날짜순으로 최근 max번만 쓴다(서버는 기본 30번).
+export function cleanLedger(value: unknown, max = MAX_LEDGER): LedgerEntry[] {
   if (!Array.isArray(value)) return [];
   const byDate = new Map<string, LedgerEntry>();
-  for (const item of value.slice(-MAX_LEDGER * 2)) {
+  for (const item of value.slice(-max * 2)) {
     const entry = cleanEntry(item);
     if (entry) byDate.set(entry.date, entry);
   }
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-MAX_LEDGER);
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-max);
 }

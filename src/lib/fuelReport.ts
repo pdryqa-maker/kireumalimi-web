@@ -2,6 +2,7 @@
 // 단가가 있는 주유는 그날 우리 시도 평균 판매가(오피넷 날짜별 시도 평균)와 비교한다.
 // 주행거리는 계기판 값이 아니라 넣은 양 × 연비로 추정한 값이다.
 import { todayKst } from "./fillForecast";
+import { paidWon, previousMonth, totals } from "./fillTotals";
 import type { LedgerEntry } from "./ledger";
 import { fetchOpinetTimed } from "./opinet";
 import { areaName, FUEL_CODES, rows } from "./stations";
@@ -19,39 +20,7 @@ const compact = (date: string) => date.replaceAll("-", "");
 const shiftDays = (date: string, days: number) =>
   new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 
-function previousMonth(month: string) {
-  const [year, mon] = month.split("-").map(Number);
-  return mon === 1 ? `${year - 1}-12` : `${year}-${String(mon - 1).padStart(2, "0")}`;
-}
-
 const monthLabel = (month: string) => `${Number(month.slice(0, 4))}년 ${Number(month.slice(5))}월`;
-
-// 결제 금액이 없으면 단가 × 양으로 셈한다. 둘 다 없으면 모른다.
-const paidWon = (entry: LedgerEntry) =>
-  entry.totalWon ?? (entry.pricePerLiter && entry.liters !== null ? Math.round(entry.pricePerLiter * entry.liters) : null);
-
-function totals(entries: LedgerEntry[], kmpl: number) {
-  const known = entries.filter((entry) => entry.liters !== null);
-  const liters = round2(known.reduce((sum, entry) => sum + entry.liters!, 0));
-  const paid = entries.filter((entry) => paidWon(entry) !== null);
-  const totalWon = paid.reduce((sum, entry) => sum + paidWon(entry)!, 0);
-  // 단가와 km당 연료비는 금액과 리터를 함께 아는 주유로만 셈한다.
-  const both = paid.filter((entry) => entry.liters !== null);
-  const bothWon = both.reduce((sum, entry) => sum + paidWon(entry)!, 0);
-  const bothLiters = both.reduce((sum, entry) => sum + entry.liters!, 0);
-  return {
-    fills: entries.length,
-    // 리터를 아는 주유만 더한 값. 금액만 적은 주유(litersUnknownFills)는 빠진다.
-    liters,
-    litersUnknownFills: entries.length - known.length,
-    // 금액을 아는 주유만 더한 값. wonUnknownFills가 0보다 크면 실제로 쓴 돈은 이보다 많다.
-    totalWon: paid.length > 0 ? totalWon : null,
-    wonUnknownFills: entries.length - paid.length,
-    avgPricePerLiter: bothLiters > 0 ? round1(bothWon / bothLiters) : null,
-    estimatedKm: Math.round(liters * kmpl),
-    wonPerKm: bothLiters > 0 ? round1(bothWon / (bothLiters * kmpl)) : null,
-  };
-}
 
 // 날짜별 시도 평균 판매가. 한 번 부르면 그 날짜까지 7일치(모든 유종)가 온다.
 // 가장 최근 날은 평균이 아직 없어 빈 응답이 올 수 있다. 그래서 받은 날짜 범위만 다 받은 것으로 치고,

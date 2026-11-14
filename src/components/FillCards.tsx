@@ -3,7 +3,6 @@
 // 내 차 주유 예보: 주유 기록을 받는 카드와, 다음 주유 예상일·알림 미리보기 카드.
 import { useState } from "react";
 import {
-  addDays,
   forecastNextFill,
   MAX_RECORDS,
   MIN_RECORDS,
@@ -26,24 +25,20 @@ const BUTTON = "rounded-full px-4 py-2 text-sm font-semibold shadow-raised-sm ac
 // 금액(won)으로 받는다. 영수증이나 예전 기록처럼 리터만 있는 줄은 리터를 그대로 두고 보여 준다.
 type Row = { date: string; won: string; liters: number | null };
 
-// 저장한 기록이 없으면 예시 기록을 채워 둔다. 이용자가 바꿔 쓰면 된다.
-function initialRows(): { rows: Row[]; example: boolean } {
+// 빈 줄. 예시 금액은 값이 아니라 안내 글(placeholder)로만 보여 준다. 예시가 내 기록으로 저장되지 않게 한다.
+const EMPTY_ROW: Row = { date: "", won: "", liters: null };
+const WON_HINT = "50000";
+
+// 저장한 기록이 없으면 빈 줄 3개로 시작한다.
+function initialRows(): { rows: Row[]; empty: boolean } {
   const saved = loadFills();
   if (saved.length >= MIN_RECORDS) {
     return {
       rows: saved.map((record) => ({ date: record.date, won: record.won ? String(record.won) : "", liters: record.liters ?? null })),
-      example: false,
+      empty: false,
     };
   }
-  const today = todayKst();
-  return {
-    rows: [
-      { date: addDays(today, -15), won: "50000", liters: null },
-      { date: addDays(today, -8), won: "50000", liters: null },
-      { date: addDays(today, -1), won: "60000", liters: null },
-    ],
-    example: true,
-  };
+  return { rows: [EMPTY_ROW, EMPTY_ROW, EMPTY_ROW], empty: true };
 }
 
 // 금액을 비워 두면 그 줄의 리터(영수증 기록)를 쓴다.
@@ -51,12 +46,12 @@ const toRecord = (row: Row): FillRecord =>
   row.won.trim() !== "" ? { date: row.date, won: Number(row.won) } : { date: row.date, liters: row.liters };
 
 export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForecast) => void; busy: boolean }) {
-  const [{ rows, example }, setState] = useState(initialRows);
+  const [{ rows, empty }, setState] = useState(initialRows);
   const [error, setError] = useState("");
   const today = todayKst();
 
   const update = (next: Row[]) => {
-    setState({ rows: next, example: false });
+    setState({ rows: next, empty: false });
     setError("");
   };
 
@@ -76,7 +71,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
       <p className="mt-2 text-[15px] leading-relaxed">
         최근에 주유한 날짜와 금액을 {MIN_RECORDS}~{MAX_RECORDS}번 넣어 주세요. 기록 사이 간격으로 다음 주유일을 셈해요.
       </p>
-      {example && <p className="mt-1 text-xs text-ink-soft">예시 기록이에요. 내 기록으로 바꿔 주세요.</p>}
+      {empty && <p className="mt-1 text-xs text-ink-soft">넣은 날짜와 금액을 적어 주세요.</p>}
       <ul className="mt-3 space-y-2.5">
         {rows.map((row, index) => (
           <li key={index} className="flex items-center gap-2">
@@ -97,7 +92,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
                 min={RECORD_WON.min}
                 max={RECORD_WON.max}
                 value={row.won}
-                placeholder={row.liters !== null ? `${row.liters}L` : undefined}
+                placeholder={row.liters !== null ? `${row.liters}L` : WON_HINT}
                 aria-label={`${index + 1}번째 주유 금액(원)${row.liters !== null ? `, 비워 두면 ${row.liters}리터` : ""}`}
                 onChange={(event) =>
                   update(rows.map((item, at) => (at === index ? { ...item, won: event.target.value } : item)))
@@ -132,7 +127,7 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
           다음 주유일 계산
         </button>
         {rows.length < MAX_RECORDS && (
-          <button type="button" onClick={() => update([...rows, { date: today, won: "50000", liters: null }])} disabled={busy} className={BUTTON}>
+          <button type="button" onClick={() => update([...rows, EMPTY_ROW])} disabled={busy} className={BUTTON}>
             기록 추가
           </button>
         )}
