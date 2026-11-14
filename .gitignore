@@ -46,3 +46,6 @@ next-env.d.ts
 
 # 개발용 계정 저장(로컬 가입·로그인 시험)
 /.data/
+
+# 설치 때 node_modules에서 복사하는 지도 워커
+/public/maplibre/

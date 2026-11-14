@@ -17,3 +17,9 @@ export function toKatec(lat: number, lon: number) {
   const [x, y] = proj4("WGS84", KATEC, [lon, lat]);
   return { x: Math.round(x), y: Math.round(y) };
 }
+
+// 오피넷 KATEC 좌표를 지도에 찍을 위경도(WGS84)로 바꾼다.
+export function fromKatec(x: number, y: number) {
+  const [lon, lat] = proj4(KATEC, "WGS84", [x, y]);
+  return { lat: Math.round(lat * 1e6) / 1e6, lon: Math.round(lon * 1e6) / 1e6 };
+}

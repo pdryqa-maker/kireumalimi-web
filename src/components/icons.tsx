@@ -103,6 +103,13 @@ export const CompassIcon = (props: IconProps) => (
   </Svg>
 );
 
+export const MapIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="m9 4.5-5 2v13l5-2 6 2 5-2v-13l-5 2z" />
+    <path d="M9 4.5v13M15 6.5v13" />
+  </Svg>
+);
+
 export const RecordsIcon = (props: IconProps) => (
   <Svg {...props}>
     <rect x="5" y="3.5" width="14" height="17" rx="2.5" />

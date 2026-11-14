@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { AccountState } from "@/lib/accountSync";
 import AccountNotice from "./AccountNotice";
-import { BellIcon, CompassIcon, HomeIcon, RecordsIcon, UserIcon } from "./icons";
+import { BellIcon, CompassIcon, HomeIcon, MapIcon, RecordsIcon, UserIcon } from "./icons";
 import { LocationPicker } from "./LocationPicker";
 import { useAccount } from "./useAccount";
 import { useProfile } from "./useStored";
@@ -16,6 +16,7 @@ import { useProfile } from "./useStored";
 const NAV = [
   { href: "/", label: "홈", Icon: HomeIcon },
   { href: "/explore", label: "탐색", Icon: CompassIcon },
+  { href: "/map", label: "지도", Icon: MapIcon },
   { href: "/records", label: "내 기록", Icon: RecordsIcon },
   { href: "/alerts", label: "알림", Icon: BellIcon },
 ];

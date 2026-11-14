@@ -6,6 +6,7 @@ import { placeAt } from "@/lib/places";
 import { MAX_LITERS } from "@/lib/policy";
 import type { LedgerEntry } from "@/lib/ledger";
 import { isKatec } from "@/lib/profile";
+import { fromKatec } from "@/lib/katec";
 import { effectivePrice, isExcluded, NO_PREFS, type Prefs } from "@/lib/discounts";
 import { coreName, sameStation, searchName } from "@/lib/stationName";
 
@@ -362,6 +363,13 @@ function aroundRows(body: unknown) {
 
 const toKm = (meters: number) => Math.round(meters / 100) / 10;
 
+// 실질비용 한 곳: 넣는 기름값 + 출발 위치에서 오가는 연료비(직선 왕복). 추천 목록과 지도가 같은 식을 쓴다.
+function tripCost(paidPrice: number, distanceM: number, liters: number, kmpl: number) {
+  const fillWon = Math.round(paidPrice * liters);
+  const tripWon = Math.round(((2 * distanceM) / 1000 / kmpl) * paidPrice);
+  return { fillWon, tripWon, totalWon: fillWon + tripWon };
+}
+
 // 내 할인과 뺀 상표 반영: 뺀 상표는 거르고(거른 수를 남긴다), 오피넷 가격(price)은 그대로 둔 채
 // 할인액(discountWon)과 할인 반영 가격(paidPrice)을 더한다. 순위는 paidPrice로 매긴다.
 function withPrefs<T extends { brand: string; price: number }>(list: T[], prefs: Prefs) {
@@ -456,11 +464,11 @@ export async function findByTotalCost(
   });
   // 내 할인이 있으면 넣는 기름도 오가는 기름도 할인 반영 가격으로 셈한다.
   const picked = withPrefs(aroundRows(body), prefs);
-  const all = picked.stations.map(({ distanceM, ...station }) => {
-    const fillWon = Math.round(station.paidPrice * liters);
-    const tripWon = Math.round(((2 * distanceM) / 1000 / kmpl) * station.paidPrice);
-    return { ...station, distanceKm: toKm(distanceM), fillWon, tripWon, totalWon: fillWon + tripWon };
-  });
+  const all = picked.stations.map(({ distanceM, ...station }) => ({
+    ...station,
+    distanceKm: toKm(distanceM),
+    ...tripCost(station.paidPrice, distanceM, liters, kmpl),
+  }));
 
   const base = {
     fuel,
@@ -491,6 +499,66 @@ export async function findByTotalCost(
     extraForCheapestWon: cheapest.totalWon - best.totalWon,
     // 1km 더 멀면(왕복 2km) 드는 연료비를 주유량으로 나눈 값. 리터당 이만큼 싸야 더 가는 보람이 있다.
     breakEvenWonPerKm: Math.round(((2 / kmpl) * best.paidPrice) / liters),
+  };
+}
+
+// 지도: 출발 위치 반경 5km의 모든 주유소를 위경도, 할인 반영 가격, 실질비용과 함께 준다.
+// 반경 조회 요청이 거리까지 고려한 추천과 같아 오피넷 캐시를 함께 쓴다. 가격 낮은 순으로 정렬한다.
+export async function mapStations(
+  fuel: string,
+  origin: Origin,
+  fill: Fill = litersFill(DEFAULT_LITERS),
+  kmpl = DEFAULT_KMPL,
+  prefs: Prefs = NO_PREFS,
+) {
+  const { liters } = fill;
+  const prodcd = FUEL_CODES[fuel];
+  const place = resolveOrigin(origin);
+  if (!prodcd || !place) {
+    throw new RangeError("지원하지 않는 유종 또는 위치입니다.");
+  }
+  if (!Number.isInteger(liters) || liters < 1 || liters > MAX_LITERS) {
+    throw new RangeError(`주유량은 1~${MAX_LITERS}리터 사이 정수여야 합니다.`);
+  }
+  if (!Number.isFinite(kmpl) || kmpl < 1 || kmpl > 50) {
+    throw new RangeError("연비는 1~50km/L 사이여야 합니다.");
+  }
+
+  const { body, fetchedAt } = await fetchOpinetTimed("aroundAll", {
+    x: String(place.x),
+    y: String(place.y),
+    radius: String(RADIUS_M),
+    prodcd,
+    sort: "1",
+  });
+  const coords = new Map(rows(body).map((row) => [String(row.UNI_ID), { x: Number(row.GIS_X_COOR), y: Number(row.GIS_Y_COOR) }]));
+  const picked = withPrefs(aroundRows(body), prefs);
+  const stations = picked.stations
+    .flatMap(({ distanceM, ...station }) => {
+      const at = coords.get(station.id);
+      if (!at || !isKatec(at.x, at.y)) return [];
+      return [{ ...station, distanceKm: toKm(distanceM), ...fromKatec(at.x, at.y), ...tripCost(station.paidPrice, distanceM, liters, kmpl) }];
+    })
+    .sort((a, b) => a.paidPrice - b.paidPrice || a.distanceKm - b.distanceKm);
+  const best = [...stations].sort((a, b) => a.totalWon - b.totalWon || a.distanceKm - b.distanceKm)[0];
+
+  return {
+    fuel,
+    place: place.name,
+    origin: fromKatec(place.x, place.y),
+    liters,
+    fill,
+    kmpl,
+    radiusKm: RADIUS_M / 1000,
+    fetchedAt,
+    fetchedAtKst: kstTime(fetchedAt),
+    distanceNote: "거리는 직선거리라 실제 도로는 더 깁니다.",
+    excludedCount: picked.excludedCount,
+    cheapestId: stations[0]?.id ?? null,
+    bestTotalId: best?.id ?? null,
+    minPrice: stations[0]?.paidPrice ?? null,
+    maxPrice: stations.at(-1)?.paidPrice ?? null,
+    stations,
   };
 }
 

@@ -48,6 +48,29 @@
   display: none;
 }
 
+/* 지도 탭(data-map)은 머리글 아래를 지도가 가득 채운다. 출처는 지도 오른쪽 아래 표기로 대신한다. */
+.app-shell:has([data-map]) .shell-width {
+  max-width: none;
+  padding-inline: 0;
+}
+
+.app-shell:has([data-map]) .shell-footer {
+  display: none;
+}
+
+/* 휴대폰 지도: 아래는 주유소 카드와 아래 탭이 차지하므로 지도 출처 표시는 위 조건 줄 아래로 올리고,
+   확대·축소 버튼은 두 손가락으로 대신하므로 숨긴다. */
+@media (width < 64rem) {
+  [data-map] .maplibregl-ctrl-bottom-right {
+    top: 7.5rem;
+    bottom: auto;
+  }
+
+  [data-map] .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
+    display: none;
+  }
+}
+
 /* 답변은 표면에서 솟아오르고, 질문은 표면으로 눌려 들어간다. 둘 다 처음부터 보이는 상태에서 시작한다. */
 @keyframes rise {
   from {
