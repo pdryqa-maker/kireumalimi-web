@@ -12,7 +12,7 @@ import { fuelReport } from "@/lib/fuelReport";
 import { KEROSENE_APP } from "@/lib/kerosene";
 import { MAX_ODOMETER_KM, type LedgerEntry } from "@/lib/ledger";
 import { checkNumbers, collectAllowed } from "@/lib/numbers";
-import { PLACES } from "@/lib/places";
+import { placeAt, placeGroups, placeTitle, PLACES } from "@/lib/places";
 import { cleanAnswerText } from "@/lib/answerText";
 import { CAP_FUELS, FUEL_TAX_CUT, MAX_LITERS, priceCapNotice, taxCutImpact } from "@/lib/policy";
 import { fuelName, GUEST, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
@@ -54,13 +54,12 @@ export function cleanConditions(value: unknown, profile: Profile): ScreenConditi
   const item = value as Partial<ScreenConditions>;
   const fuel = typeof item.fuel === "string" && PROFILE_FUELS.includes(item.fuel) ? item.fuel : null;
   const amount = cleanAmount(item.amount);
-  const place =
-    typeof item.place === "string" && (item.place in PLACES || (item.place === MY && profile.location !== null)) ? item.place : null;
+  const place = typeof item.place === "string" && placeChoices(profile).some(([key]) => key === item.place) ? item.place : null;
   return fuel && amount !== null && place ? { fuel, amount, place } : null;
 }
 
 function conditionLine(conditions: ScreenConditions, profile: Profile, ledger: LedgerEntry[]) {
-  const where = conditions.place === MY ? `이용자 위치(${profile.location?.label})` : `울주군 ${PLACES[conditions.place].name}`;
+  const where = conditions.place === MY ? `이용자 위치(${profile.location?.label})` : placeTitle(conditions.place);
   return `- 지금 화면에서 고른 조건: ${fuelName(conditions.fuel)}(${conditions.fuel}) · ${myAmount(profile, ledger)} · 출발 위치 ${where}. 질문에 따로 말하지 않으면 이 유종·주유량·출발 위치(place에 '${conditions.place}')로 조회합니다(주유량은 fill에 '내 차 설정').`;
 }
 
@@ -102,13 +101,13 @@ ${profileBlock(profile, ledger, conditions)}
 - 시각은 도구 결과의 한국 시각(fetchedAtKst, updatedAt)을 씁니다.
 - 주유소 가격을 말할 때는 오피넷에 보고된 가격이라 현장 가격과 다를 수 있다고 짧게 덧붙입니다. 상세 정보를 조회했다면 기준 시각도 함께 말합니다.
 - 앞으로의 가격 예측이나 주유소의 의도 추정은 하지 않습니다. 다만 정부가 발표한 유류세 인하 종료일과 그때 내 주유량에서 더 드는 최대 금액은 예측이 아니라 발표된 값의 계산이므로 get_fuel_tax_change로 답하고, 금액 앞에 '최대'를 붙입니다.
-- 거리까지 따진 추천을 원하거나 '근처', '가까운', 읍면 이름(예: 언양, 범서)이 나오면 find_by_total_cost를 씁니다. 거리 말고 가격만 낮은 순으로 근처를 원하면 find_nearby_stations를 씁니다. 주유량은 이용자가 말한 금액·가득·리터, 없으면 fill에 '내 차 설정'을 넣습니다. 연비는 이용자가 말한 값, 없으면 이용자 정보의 값, 그것도 없으면 12km/L로 계산하고, 직선거리라는 점을 밝힙니다.
+- 거리까지 고려한 추천을 원하거나 '근처', '가까운', 출발 위치 목록의 시군구나 읍면 이름(예: 수성구, 언양, 범서)이 나오면 find_by_total_cost를 씁니다. 거리 말고 가격만 낮은 순으로 근처를 원하면 find_nearby_stations를 씁니다. 주유량은 이용자가 말한 금액·가득·리터, 없으면 fill에 '내 차 설정'을 넣습니다. 연비는 이용자가 말한 값, 없으면 이용자 정보의 값, 그것도 없으면 12km/L로 계산하고, 직선거리라는 점을 밝힙니다.
 - 석유 최고가격 고시를 물으면 get_price_cap_notice로 답합니다. 최고가격은 정유사 공급가의 상한이지 주유소 판매가의 상한이 아니라는 점을 밝히고, 내 주유량에서 달라지는 금액에는 '최대'를 붙입니다.
 - 이용자가 지난 주유 날짜와 금액(또는 양)을 말하며 다음 주유일을 물으면 estimate_next_fill로 계산합니다. '지난주 월요일' 같은 말은 오늘 날짜를 기준으로 YYYY-MM-DD로 바꿔 넣고, 기록이 두 번보다 적거나 금액과 양을 다 모르면 먼저 물어봅니다. 가격이 아니라 주유 간격을 셈한 것이라고 밝힙니다.
 - 등유 보일러 가구의 남은 기름, 등유 배달 주문, 어르신 안부 전화, 에너지바우처, 한파 대비는 같은 팀의 '${KEROSENE_APP.name}'(${KEROSENE_APP.url})이 맡습니다. 이런 질문에는 그곳을 안내하고 직접 답을 지어내지 않습니다. 실내등유 가격 조회는 여기서도 할 수 있습니다.
 - '1,750원 밑이면 알려 줘'처럼 가격 알림을 원하면 propose_price_alert로 조건을 제안합니다. 알림은 이용자가 화면에서 저장을 눌러야 만들어지므로 저장했다고 말하지 말고, 아래 카드에서 확인해 달라고 합니다.
 - 지역은 전국 시도·시군구 어디나 됩니다. 도구의 area에는 시도 이름을 앞에 넣어 '부산 해운대구', '서울', '전남 순천시'처럼 씁니다. 광주와 전남은 오피넷에서 '전남광주'로 묶여 있습니다. 지역을 찾지 못했다는 결과가 오면 결과에 적힌 이름으로 고쳐 한 번 더 조회합니다. 이용자가 지역을 말하지 않으면 이용자 정보의 내 지역, 그것도 없으면 '울산 울주군'으로 조회합니다.
-- 거리까지 따진 추천과 근처 최저가(find_by_total_cost, find_nearby_stations)는 이용자 위치나 울주군 읍면 기준만 됩니다. 다른 곳 기준으로 물으면 그 지역 최저가로 안내하고, 로그인에서 현재 위치를 넣으면 거리까지 따질 수 있다고 알립니다.
+- 거리까지 고려한 추천과 근처 최저가(find_by_total_cost, find_nearby_stations)는 도구의 출발 위치 목록(이용자 위치, 로그인에서 고른 내 지역 시도의 시군구청, 울주군 읍면)에 있는 곳 기준만 됩니다. 목록에 없는 곳 기준으로 물으면 그 지역 최저가로 안내하고, 로그인에서 현재 위치나 지역을 넣으면 거리까지 고려할 수 있다고 알립니다.
 - '요즘 기름값 왜 이래?', '왜 안 내려?', '최고가격이 1,784원인데 왜 우리 동네는 더 비싸?'처럼 가격 움직임이나 상한과 판매가의 차이를 물으면 explain_price로 답합니다. 결과에 있는 값(어제 대비, 전국 7일 변화, 최고가격이 몇 차부터 같은 값인지, 평균 판매가가 상한보다 높은지 낮은지와 그 차이, 유류세 인하)만으로 설명하고, 답 끝에 internationalNote를 한 줄 붙입니다. 국제유가나 환율의 수치, 결과에 없는 다른 원인은 말하지 않습니다. 이용자가 국제유가를 더 물으면 internationalMore를 안내합니다. 상한은 정유사 공급가의 상한이라 판매가가 그보다 높을 수도 있다고 밝힙니다.
 - 주유소 이름을 말하면(예: '서하남주유소 얼마야?') search_station_by_name으로 찾고, 가격은 get_station_detail로 확인합니다. 같은 이름이 여러 곳이면 주소를 보여 주고 어느 곳인지 묻습니다.
 - '내 단골 ○○주유소 아직 싼 편이야?', '이 알뜰주유소 진짜 싸?'처럼 한 주유소가 동네에서 싼 편인지 물으면 주유소를 찾은 뒤 check_station_standing으로 답합니다. 시군구 평균과의 차이, 반경 5km 안에서 몇 번째로 싼지(rank, count, position)를 말하고, 알뜰주유소인데 평균보다 비싸면 그렇다고 분명히 말합니다. 더 싼 곳(cheaperOption)이 있으면 함께 알립니다.
@@ -117,9 +116,9 @@ ${profileBlock(profile, ledger, conditions)}
 - '이번 달 기름값 얼마 썼어?', '지난달 주유 리포트 보여 줘'처럼 내 주유 씀씀이를 물으면 get_fuel_report로 답합니다. 주행거리는 넣은 양 × 연비로 추정한 값이라고 밝힙니다. 금액을 모르는 주유(wonUnknownFills)가 있으면 쓴 돈은 그 주유를 뺀 값이라고 말하고, 양을 모르는 주유(litersUnknownFills)가 있으면 넣은 양과 주행거리에서 빠졌다고 말합니다. 그달 기록이 없으면 영수증 사진이나 주유 기록으로 먼저 남겨 달라고 안내합니다.
 - '○○주유소 믿을 만해?', '영수증 가격이 이상해'처럼 주유소를 점검해 달라고 하면 search_station_by_name으로 주유소를 찾은 뒤 check_station_trust로 답합니다. 이름을 말하지 않으면 get_fuel_report의 stations(자주 간 주유소)에서 고르거나 어느 주유소인지 묻습니다. checks의 항목을 짧게 말하고, 공개 정보와 내 영수증을 맞춰 본 결과이지 주유소의 잘못을 판단한 것이 아니라고 밝힙니다. 가짜석유 같은 말로 단정하지 않습니다.
 - 요소수 재고나 가격을 물으면 find_urea_stations로 답합니다. 근처를 말하면 place로, 지역을 말하면 area로 찾습니다. 주유소 이름, 가격(원/L), 전화번호, 보고 시각을 알려 주고, 재고는 하루 네 번 바뀌는 보고 값이라 가기 전에 전화로 확인하라고 합니다.
-- '서울 가는데 어디서 넣을까?', '경부고속도로 휴게소 기름값'처럼 고속도로로 가는 길에 넣을 곳이나 휴게소 주유소 가격을 물으면 find_highway_stations로 답합니다. 출발지와 목적지로 노선과 방향(가는 쪽 도시)을 고르고, 어느 고속도로로 갈지 애매하면 먼저 되묻습니다. 출발지가 이용자 위치나 울주군 읍면이면 place로 넣고, 아니면 none입니다. order에 적힌 기준으로 ahead를 번호 붙여 이름, 가격, 직선거리로 알리고, cheapest가 ahead에 없으면 '이 길에서 가장 싼 곳'으로 따로 알리며, remaining과 average를 말합니다. beforeBoarding이 있으면 마지막에 그 message로 시작해 근처 주유소 이름과 가격, 휴게소 평균보다 리터당 몇 원 싼지(vsAverageWon), fill.label 기준으로 아끼는 금액(savingWon)을 말합니다. 휴게소 가격은 도로공사 값이고 거리는 직선거리라고 밝힙니다. 노선이나 방향이 없다는 오류가 오면 오류에 적힌 목록에서 골라 한 번 더 조회합니다.
+- '서울 가는데 어디서 넣을까?', '경부고속도로 휴게소 기름값'처럼 고속도로로 가는 길에 넣을 곳이나 휴게소 주유소 가격을 물으면 find_highway_stations로 답합니다. 출발지와 목적지로 노선과 방향(가는 쪽 도시)을 고르고, 어느 고속도로로 갈지 애매하면 먼저 되묻습니다. 출발지가 출발 위치 목록에 있으면 place로 넣고, 아니면 none입니다. order에 적힌 기준으로 ahead를 번호 붙여 이름, 가격, 직선거리로 알리고, cheapest가 ahead에 없으면 '이 길에서 가장 싼 곳'으로 따로 알리며, remaining과 average를 말합니다. beforeBoarding이 있으면 마지막에 그 message로 시작해 근처 주유소 이름과 가격, 휴게소 평균보다 리터당 몇 원 싼지(vsAverageWon), fill.label 기준으로 아끼는 금액(savingWon)을 말합니다. 휴게소 가격은 도로공사 값이고 거리는 직선거리라고 밝힙니다. 노선이나 방향이 없다는 오류가 오면 오류에 적힌 목록에서 골라 한 번 더 조회합니다.
 - 대화 기록에는 화면 카드로 보여 준 답이 요약으로 들어 있습니다. 이미 답한 질문에 다시 답하지 말고 마지막 질문에만 답합니다.
-- 도구로 답할 수 없는 질문이면, 지금 안내할 수 있는 것(전국 지역 최저가, 내 주유 월간 리포트, 주유소 점검, 요소수 재고, 고속도로 가는 길 휴게소 주유소와 타기 전 비교, 주유소 이름으로 찾기, 주유소가 동네에서 싼 편인지, 요즘 가격 움직임과 최고가격 해설, 주유소 상세, 내 위치나 울주군 읍면 기준 거리까지 따진 추천, 유류세 인하 종료 시 최대 금액, 가격 알림 조건, 주유 기록이나 영수증 사진으로 다음 주유일 계산, 지난 최고가격 고시 뒤 울주군 가격 변화)을 알립니다.
+- 도구로 답할 수 없는 질문이면, 지금 안내할 수 있는 것(전국 지역 최저가, 내 주유 월간 리포트, 주유소 점검, 요소수 재고, 고속도로 가는 길 휴게소 주유소와 타기 전 비교, 주유소 이름으로 찾기, 주유소가 동네에서 싼 편인지, 요즘 가격 움직임과 최고가격 해설, 주유소 상세, 내 위치나 내 지역 시군구청, 울주군 읍면 기준 거리까지 고려한 추천, 유류세 인하 종료 시 최대 금액, 가격 알림 조건, 주유 기록이나 영수증 사진으로 다음 주유일 계산, 지난 최고가격 고시 뒤 울주군 가격 변화)을 알립니다.
 - 존댓말로 5문장 안쪽으로 답합니다. 별표, 샵, 표 같은 마크다운 기호는 쓰지 않습니다. 여러 곳을 알려 줄 때는 줄을 바꿔 번호를 붙입니다.`;
 
 const FUELS = ["휘발유", "고급휘발유", "경유", "실내등유", "자동차부탄"];
@@ -148,8 +147,12 @@ const AREA_PARAM = {
 } as const;
 
 // 이용자 정보에 따라 출발 위치가 달라지므로 도구 목록을 질문마다 만든다.
+// 출발 위치로 고를 수 있는 곳: 이용자 위치, 내 지역(시도)의 시군구청, 울주군 읍면 행정복지센터.
 function placeChoices(profile: Profile): [string, string][] {
-  const places = Object.entries(PLACES).map(([key, place]): [string, string] => [key, `울주군 ${place.name}`]);
+  const groups = placeGroups(profile.area);
+  const keys = groups.flatMap((group) => group.places.map((place) => place.key));
+  for (const key of Object.keys(PLACES)) if (!keys.includes(key)) keys.push(key);
+  const places = keys.map((key): [string, string] => [key, `${placeTitle(key)}${key in PLACES ? "" : "(시군구청)"}`]);
   return profile.location ? [[MY, `이용자 위치(${profile.location.label})`], ...places] : places;
 }
 
@@ -229,7 +232,7 @@ const tools = (profile: Profile): Anthropic.Beta.BetaTool[] => [
   {
     name: "find_by_total_cost",
     description:
-      "출발 위치(이용자 위치 또는 울주군 읍면 행정복지센터)에서 반경 5km 안의 주유소를 실질비용(가격 × 주유량 + 직선 왕복 거리의 연료비) 순으로 최대 5곳 돌려준다. 가장 싼 곳(cheapest), 가장 가까운 곳(nearest), 가장 싼 곳까지 가면 더 드는 돈(extraForCheapestWon), 1km 더 가려면 리터당 몇 원 싸야 하는지(breakEvenWonPerKm)도 있다.",
+      "출발 위치(이용자 위치, 내 지역의 시군구청, 울주군 읍면 행정복지센터)에서 반경 5km 안의 주유소를 실질비용(가격 × 주유량 + 직선 왕복 거리의 연료비) 순으로 최대 5곳 돌려준다. 가장 싼 곳(cheapest), 가장 가까운 곳(nearest), 가장 싼 곳까지 가면 더 드는 돈(extraForCheapestWon), 1km 더 가려면 리터당 몇 원 싸야 하는지(breakEvenWonPerKm)도 있다.",
     strict: true,
     input_schema: {
       type: "object",
@@ -250,7 +253,7 @@ const tools = (profile: Profile): Anthropic.Beta.BetaTool[] => [
   {
     name: "find_nearby_stations",
     description:
-      "출발 위치(이용자 위치 또는 울주군 읍면 행정복지센터)에서 반경 5km 안의 주유소를 가격이 낮은 순으로 최대 5곳 돌려준다. 이름, 상표, 가격(원/L), 직선거리(distanceKm), 조회 시각(fetchedAtKst)이 있다.",
+      "출발 위치(이용자 위치, 내 지역의 시군구청, 울주군 읍면 행정복지센터)에서 반경 5km 안의 주유소를 가격이 낮은 순으로 최대 5곳 돌려준다. 이름, 상표, 가격(원/L), 직선거리(distanceKm), 조회 시각(fetchedAtKst)이 있다.",
     strict: true,
     input_schema: {
       type: "object",
@@ -426,7 +429,7 @@ const tools = (profile: Profile): Anthropic.Beta.BetaTool[] => [
         place: {
           type: "string",
           enum: ["none", ...placeChoices(profile).map(([key]) => key)],
-          description: `출발 위치. 이용자 위치나 울주군 읍면이 아니면 none. ${describe(placeChoices(profile))}`,
+          description: `출발 위치. 이 목록에 없으면 none. ${describe(placeChoices(profile))}`,
         },
         ...FILL_PARAMS,
       },
@@ -572,7 +575,8 @@ async function ureaStations(input: Record<string, unknown>, profile: Profile) {
   const text = String(input.area ?? "").trim();
   const area = text ? await resolveArea(text) : null;
   const origin = place === "none" || area ? null : originOf(place, profile);
-  const sido = area?.code.slice(0, 2) ?? (place in PLACES ? "18" : (profile.area?.code.slice(0, 2) ?? "18"));
+  const sido =
+    area?.code.slice(0, 2) ?? (place in PLACES ? "18" : placeAt(place) ? place.slice(0, 2) : (profile.area?.code.slice(0, 2) ?? "18"));
   return findUrea(sido, area && area.code.length === 4 ? area.name : null, origin);
 }
 
