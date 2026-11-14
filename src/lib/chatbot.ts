@@ -15,7 +15,7 @@ import { checkNumbers, collectAllowed } from "@/lib/numbers";
 import { placeAt, placeGroups, placeTitle, PLACES } from "@/lib/places";
 import { cleanAnswerText } from "@/lib/answerText";
 import { CAP_FUELS, FUEL_TAX_CUT, MAX_LITERS, priceCapNotice, taxCutImpact } from "@/lib/policy";
-import { fuelName, GUEST, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
+import { fuelName, GUEST, prefsOf, PROFILE_FUELS, signedIn, type Profile } from "@/lib/profile";
 import {
   findByTotalCost,
   findCheapest,
@@ -63,6 +63,20 @@ function conditionLine(conditions: ScreenConditions, profile: Profile, ledger: L
   return `- 지금 화면에서 고른 조건: ${fuelName(conditions.fuel)}(${conditions.fuel}) · ${myAmount(profile, ledger)} · 출발 위치 ${where}. 질문에 따로 말하지 않으면 이 유종·주유량·출발 위치(place에 '${conditions.place}')로 조회합니다(주유량은 fill에 '내 차 설정').`;
 }
 
+// 내 정보의 할인·뺀 상표. 근처·거리·지역 최저가 도구는 이 값을 그대로 받아 결과를 거르고 할인 가격으로 순위를 매긴다.
+function prefsLine(profile: Profile) {
+  const { discounts, excludeBrands } = prefsOf(profile);
+  if (discounts.length === 0 && excludeBrands.length === 0) return null;
+  const parts = [
+    discounts.length > 0 ? `할인: ${discounts.map((d) => `${d.brand} 리터당 ${d.wonPerLiter}원`).join(", ")}.` : "",
+    excludeBrands.length > 0 ? `뺀 상표: ${excludeBrands.join(", ")}.` : "",
+  ].filter(Boolean);
+  return (
+    `- ${parts.join(" ")} 근처 최저가·거리까지 고려한 추천·지역 최저가는 이 할인을 빼고 뺀 상표를 거른 결과입니다(price는 오피넷 가격, paidPrice는 할인 반영 가격, excludedCount는 거른 곳 수). ` +
+    "답에서 할인 전 오피넷 가격과 할인액을 함께 밝히고, 거른 곳이 있으면 몇 곳 뺐는지 말합니다."
+  );
+}
+
 function profileBlock(profile: Profile, ledger: LedgerEntry[], conditions: ScreenConditions | null) {
   const screen = conditions ? `\n${conditionLine(conditions, profile, ledger)}` : "";
   if (!signedIn(profile)) {
@@ -81,6 +95,8 @@ function profileBlock(profile: Profile, ledger: LedgerEntry[], conditions: Scree
   if (profile.area) {
     lines.push(`- 내 지역: ${profile.area.name}(지역코드 ${profile.area.code}). 지역 없이 최저가를 물으면 이 지역으로 조회합니다.`);
   }
+  const prefs = prefsLine(profile);
+  if (prefs) lines.push(prefs);
   lines.push(ledgerLine(ledger));
   if (conditions) lines.push(conditionLine(conditions, profile, ledger));
   if (!profile.location && !profile.area) {
@@ -595,7 +611,7 @@ async function runTool(name: string, input: Record<string, unknown>, { proposals
     case "find_urea_stations":
       return ureaStations(input, profile);
     case "find_cheapest_stations":
-      return findCheapest(String(input.fuel), (await resolveArea(String(input.area))).code);
+      return findCheapest(String(input.fuel), (await resolveArea(String(input.area))).code, 5, prefsOf(profile));
     case "search_station_by_name": {
       const area = String(input.area ?? "").trim();
       return searchStations(String(input.name), area ? (await resolveArea(area)).code : null);
@@ -633,10 +649,10 @@ async function runTool(name: string, input: Record<string, unknown>, { proposals
     case "find_by_total_cost": {
       const fill = await fillOf(input, String(input.fuel), profile, ledger);
       if (!fill) return { error: "오늘 전국 평균 판매가를 못 받아 금액을 리터로 바꾸지 못했습니다. 리터로 말해 주면 계산할 수 있다고 안내합니다." };
-      return findByTotalCost(String(input.fuel), originOf(String(input.place), profile), fill, Number(input.km_per_liter));
+      return findByTotalCost(String(input.fuel), originOf(String(input.place), profile), fill, Number(input.km_per_liter), prefsOf(profile));
     }
     case "find_nearby_stations":
-      return findNearby(String(input.fuel), originOf(String(input.place), profile));
+      return findNearby(String(input.fuel), originOf(String(input.place), profile), 5, prefsOf(profile));
     case "get_fuel_tax_change": {
       const fill = await fillOf(input, String(input.fuel), profile, ledger);
       const result = taxCutImpact(String(input.fuel), fill?.liters ?? null);
