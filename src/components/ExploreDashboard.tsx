@@ -120,7 +120,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
     },
     {
       key: "total-cost",
-      name: "거리까지 따진 추천",
+      name: "거리까지 고려한 추천",
       description: "오가는 기름값까지 더해 실제로 덜 드는 곳",
       ai: false,
       Icon: RouteIcon,

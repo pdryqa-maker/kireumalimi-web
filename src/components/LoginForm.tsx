@@ -351,7 +351,7 @@ export default function LoginForm() {
           />
         </Section>
 
-        <Section title="내 위치" note="근처 주유소, 거리까지 따진 추천, 내 지역 최저가에 써요. 위치는 100m 단위로 줄여 이 브라우저에만 저장해요.">
+        <Section title="내 위치" note="근처 주유소, 거리까지 고려한 추천, 내 지역 최저가에 써요. 위치는 100m 단위로 줄여 이 브라우저에만 저장해요.">
           <div className="grid grid-cols-2 gap-2.5">
             <button type="button" onClick={locate} disabled={locating} className={`${BUTTON} flex items-center justify-center gap-2 bg-accent text-on-accent`}>
               <LocateIcon className="size-4 shrink-0" />
@@ -399,7 +399,7 @@ export default function LoginForm() {
                 </select>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-                직접 고르면 그 지역 최저가로 안내해요. 근처 주유소와 거리까지 따진 추천은 현재 위치로 찾아야 쓸 수 있어요.
+                직접 고르면 그 지역 최저가로 안내해요. 근처 주유소와 거리까지 고려한 추천은 현재 위치로 찾아야 쓸 수 있어요.
                 {mounted && form.location ? " 고르면 찾아 둔 현재 위치는 지워요." : ""}
               </p>
               {areaNote && (
