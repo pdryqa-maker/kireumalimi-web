@@ -171,7 +171,7 @@ function taxSummary(tax: TaxImpact, cost: CostResult | null) {
     (tax.fill && tax.maxExtraWon !== null
       ? `${tax.fuel} ${tax.fill.label}에 최대 ${won(tax.maxExtraWon)}원 더 듦(리터당 ${tax.wonPerLiter}원).`
       : `${tax.fuel} 리터당 최대 ${tax.wonPerLiter}원 더 듦.`) +
-    (best && cost ? ` ${cost.place} 출발 거리까지 따진 추천: ${best.name} 리터당 ${won(best.price)}원.` : "")
+    (best && cost ? ` ${cost.place} 출발 거리까지 고려한 추천: ${best.name} 리터당 ${won(best.price)}원.` : "")
   );
 }
 
