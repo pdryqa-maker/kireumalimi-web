@@ -825,6 +825,7 @@ export default function ChatPanel({
   return (
     <section
       aria-label={isPanel ? "결과" : "주유 챗봇"}
+      data-chat={isPanel ? undefined : ""}
       className={
         isPanel
           ? "flex h-full min-h-0 flex-col"
