@@ -1,6 +1,6 @@
 "use client";
 
-// 간편 로그인: 부를 이름, 내 위치, 내 차를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
+// 간편 로그인: 부를 이름, 내 위치, 자주 가는 곳, 내 차, 주유 할인·뺀 상표를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -15,8 +15,21 @@ import {
   type CarSize,
   type MyCar,
 } from "@/lib/fuelEconomy";
+import { BRAND_KEYS, DISCOUNT_LIMITS, type BrandKey, type Discount } from "@/lib/discounts";
 import { inKorea, toKatec } from "@/lib/katec";
-import { cleanText, fuelName, GUEST, LIMITS, PROFILE_FUELS, profileStore, saveProfile, signedIn, type Profile } from "@/lib/profile";
+import { placeAt, placeGroups } from "@/lib/places";
+import {
+  cleanText,
+  fuelName,
+  GUEST,
+  LIMITS,
+  PROFILE_FUELS,
+  profileStore,
+  saveProfile,
+  signedIn,
+  type MyPlace,
+  type Profile,
+} from "@/lib/profile";
 import { CameraIcon, LocateIcon } from "./icons";
 import { shrinkPhoto } from "./photo";
 import { useFullLiters } from "./useFill";
@@ -156,6 +169,129 @@ function CarSearch({ onPick }: { onPick: (car: MyCar) => void }) {
   );
 }
 
+const MONTHLY_KM_ERROR = `한 달 주행거리는 ${LIMITS.minMonthlyKm.toLocaleString("ko-KR")}~${LIMITS.maxMonthlyKm.toLocaleString("ko-KR")}km로 넣어 주세요.`;
+const DISCOUNT_ERROR = `할인은 리터당 ${DISCOUNT_LIMITS.minWon}~${DISCOUNT_LIMITS.maxWon}원 사이 정수로 넣어 주세요.`;
+type DiscountRow = { brand: BrandKey; won: string };
+
+// 할인 줄 → 저장할 할인. 금액을 비운 줄은 버린다. 틀린 줄이 있으면 오류 문구.
+function readDiscounts(rows: DiscountRow[]): { discounts: Discount[] } | { error: string } {
+  const discounts = rows
+    .filter((row) => row.won.trim() !== "")
+    .map((row) => ({ brand: row.brand, wonPerLiter: Number(row.won) }));
+  const bad = discounts.some(
+    ({ wonPerLiter }) => !Number.isInteger(wonPerLiter) || wonPerLiter < DISCOUNT_LIMITS.minWon || wonPerLiter > DISCOUNT_LIMITS.maxWon,
+  );
+  if (bad) return { error: DISCOUNT_ERROR };
+  if (new Set(discounts.map((discount) => discount.brand)).size !== discounts.length) return { error: "같은 상표 할인은 하나만 넣어 주세요." };
+  return { discounts };
+}
+
+// 자주 가는 곳 한 줄(집 또는 회사): 지금 여기로 저장(100m 단위) 또는 내 지역 출발 위치 목록에서 고르기.
+function PlaceRow({
+  title,
+  place,
+  area,
+  mounted,
+  onChange,
+}: {
+  title: "집" | "회사";
+  place: MyPlace | null;
+  area: Area | null;
+  mounted: boolean;
+  onChange: (place: MyPlace | null) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [note, setNote] = useState("");
+  const groups = placeGroups(area);
+
+  function here() {
+    setPicking(false);
+    if (!("geolocation" in navigator)) {
+      setNote("이 브라우저는 위치를 알려 주지 않아요. '목록에서 고르기'로 골라 주세요.");
+      return;
+    }
+    setLocating(true);
+    setNote("");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLocating(false);
+        if (!inKorea(coords.latitude, coords.longitude)) {
+          setNote("우리나라 밖 위치라 저장하지 않았어요. '목록에서 고르기'로 골라 주세요.");
+          return;
+        }
+        const katec = toKatec(coords.latitude, coords.longitude);
+        onChange({ label: "현재 위치", x: round100(katec.x), y: round100(katec.y) });
+      },
+      (problem) => {
+        setLocating(false);
+        setNote(
+          problem.code === problem.PERMISSION_DENIED
+            ? "위치 권한이 꺼져 있어요. 브라우저에서 위치를 허용하거나 '목록에서 고르기'로 골라 주세요."
+            : "위치를 찾지 못했어요. 잠시 뒤 다시 누르거나 '목록에서 고르기'로 골라 주세요.",
+        );
+      },
+      { timeout: 10_000, maximumAge: 10 * 60_000 },
+    );
+  }
+
+  function pick(key: string) {
+    const found = placeAt(key);
+    if (!found) return;
+    onChange({ label: found.name.slice(0, LIMITS.label), x: found.x, y: found.y });
+    setPicking(false);
+    setNote("");
+  }
+
+  return (
+    <div className="rounded-2xl bg-canvas px-4 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm">
+          <span className="font-semibold">{title}</span> <span>{mounted && place ? place.label : "없음"}</span>
+        </p>
+        {mounted && place && (
+          <button type="button" onClick={() => onChange(null)} className="shrink-0 text-sm text-ink-soft underline underline-offset-4">
+            지우기
+          </button>
+        )}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <button type="button" onClick={here} disabled={locating} className={`${BUTTON} flex items-center gap-1.5`}>
+          <LocateIcon className="size-4 shrink-0" />
+          {locating ? "찾는 중…" : "지금 여기로 저장"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPicking(!picking)}
+          aria-expanded={picking}
+          className={`${BUTTON} ${picking ? "bg-ground shadow-inset-sm" : ""}`}
+        >
+          목록에서 고르기
+        </button>
+      </div>
+      {picking && (
+        <select aria-label={`${title} 고르기`} value="" onChange={(event) => pick(event.target.value)} className={`${SELECT} mt-2.5`}>
+          <option value="">{title === "집" ? "집과 가까운 곳 고르기" : "회사와 가까운 곳 고르기"}</option>
+          {groups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.places.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      )}
+      {note && (
+        <p role="status" className="mt-2 text-sm text-ink-soft">
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <fieldset className="mt-8 first-of-type:mt-6">
@@ -187,6 +323,9 @@ export default function LoginForm() {
   const [error, setError] = useState("");
   // 직접 입력한 금액. 고르는 값에 없는 금액이 저장돼 있으면 처음부터 직접 입력으로 연다.
   const [customWon, setCustomWon] = useState<string | null>(null);
+  // 한 달 주행거리와 할인 줄은 고치는 동안 글자로 두고, 저장할 때 숫자로 바꾼다.
+  const [monthlyText, setMonthlyText] = useState<string | null>(null);
+  const [discountRows, setDiscountRows] = useState<DiscountRow[] | null>(null);
 
   const form = draft ?? saved;
   const fullTank = useFullLiters(form.fullLiters);
@@ -202,11 +341,28 @@ export default function LoginForm() {
   const fromReading = economy.source === "measured" || economy.source === "dashboard";
   const computedSource = form.car ? "car" : form.size ? "size" : "default";
   const readingName = form.reading?.kind === "dashboard" ? "계기판 평균 연비" : "실측 연비";
+  const monthlyShown = monthlyText ?? (form.monthlyKm !== null ? String(form.monthlyKm) : "");
+  const rows = discountRows ?? form.discounts.map((discount) => ({ brand: discount.brand, won: String(discount.wonPerLiter) }));
+  const editRows = (next: DiscountRow[]) => {
+    setDiscountRows(next);
+    setError("");
+  };
+  const bothBrands = rows.filter((row) => row.won.trim() !== "" && form.excludeBrands.includes(row.brand)).map((row) => row.brand);
+  // 위치 찾기처럼 늦게 끝날 수 있으니 지금 값에 그 곳만 바꾼다.
+  const setPlace = (key: "home" | "work") => (place: MyPlace | null) => {
+    setDraft((current) => ({ ...(current ?? saved), [key]: place }));
+    setError("");
+  };
+  function toggleBrand(brand: BrandKey) {
+    const on = form.excludeBrands.includes(brand);
+    edit({ excludeBrands: BRAND_KEYS.filter((key) => (key === brand ? !on : form.excludeBrands.includes(key))) });
+  }
 
   // 유종을 바꾸면 다른 유종의 차종은 지우고 크기 평균(없으면 기본값)으로 셈한다.
   function chooseFuel(fuel: string) {
     const keepCar = !form.car || form.car.fuel === fuel;
-    edit(keepCar ? { fuel } : { fuel, car: null, kmplSource: form.size ? "size" : "default" });
+    const ureaNeeded = fuel === "경유" && form.ureaNeeded; // 요소수는 경유차만
+    edit(keepCar ? { fuel, ureaNeeded } : { fuel, ureaNeeded, car: null, kmplSource: form.size ? "size" : "default" });
   }
 
   // 차종을 고르면 유종도 그 차에 맞추고, 가득일 때의 기본 리터를 그 차 크기에 맞춘다.
@@ -363,12 +519,25 @@ export default function LoginForm() {
       setError(`연비는 ${LIMITS.minKmpl}~${LIMITS.maxKmpl}km/L 사이로 넣어 주세요.`);
       return;
     }
-    if (!saveProfile({ ...form, name, amount })) {
+    const monthlyValue = monthlyShown.trim() === "" ? null : Number(monthlyShown);
+    if (monthlyValue !== null && !(monthlyValue >= LIMITS.minMonthlyKm && monthlyValue <= LIMITS.maxMonthlyKm)) {
+      setError(MONTHLY_KM_ERROR);
+      return;
+    }
+    const read = readDiscounts(rows);
+    if ("error" in read) {
+      setError(read.error);
+      return;
+    }
+    const monthlyKm = monthlyValue === null ? null : Math.round(monthlyValue);
+    if (!saveProfile({ ...form, name, amount, monthlyKm, discounts: read.discounts })) {
       setError("이 브라우저에 저장하지 못했어요. 개인 정보 보호 모드인지 확인해 주세요.");
       return;
     }
     setDraft(null);
     setCustomWon(null);
+    setMonthlyText(null);
+    setDiscountRows(null);
     router.push("/");
   }
 
@@ -496,6 +665,13 @@ export default function LoginForm() {
           )}
         </Section>
 
+        <Section title="자주 가는 곳" note="출퇴근 길 추천과 요소수 찾기에 써요. 위치는 100m 단위로 줄여 이 브라우저에만 저장해요.">
+          <div className="grid gap-2.5">
+            <PlaceRow title="집" place={form.home} area={form.area} mounted={mounted} onChange={setPlace("home")} />
+            <PlaceRow title="회사" place={form.work} area={form.area} mounted={mounted} onChange={setPlace("work")} />
+          </div>
+        </Section>
+
         <Section title="내 차" note="유종, 한 번에 넣는 금액, 연비로 금액과 거리 비용을 셈해요.">
           <div role="radiogroup" aria-label="유종" className="flex flex-wrap gap-2">
             {PROFILE_FUELS.map((fuel) => (
@@ -511,6 +687,17 @@ export default function LoginForm() {
               </button>
             ))}
           </div>
+          {form.fuel === "경유" && (
+            <label className="mt-3 flex w-fit items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.ureaNeeded}
+                onChange={(event) => edit({ ureaNeeded: event.target.checked })}
+                className="size-4 accent-accent"
+              />
+              요소수가 필요한 차예요
+            </label>
+          )}
           <p id="amount-label" className="mt-5 text-sm text-ink-soft">
             한 번에 넣는 금액
           </p>
@@ -572,6 +759,28 @@ export default function LoginForm() {
               ? fullNote(fullTank)
               : "금액은 그날 전국 평균 판매가로 몇 리터인지 셈해요."}
           </p>
+
+          <label className="mt-5 block">
+            <span className="text-sm text-ink-soft">한 달 주행거리</span>
+            <span className="mt-1.5 flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                step="any"
+                value={monthlyShown}
+                onChange={(event) => {
+                  setMonthlyText(event.target.value);
+                  setError("");
+                }}
+                placeholder="예: 1200"
+                className={`${FIELD} max-w-[8rem] tabular-nums`}
+              />
+              <span className="text-sm text-ink-soft">km</span>
+            </span>
+            <span className="mt-1.5 block text-xs leading-relaxed text-ink-soft">
+              주유 기록이 2번보다 적을 때 이 거리로 다음 주유일을 셈해요. 모르면 비워 두세요.
+            </span>
+          </label>
 
           <p className="mt-6 text-sm text-ink-soft">차종</p>
           {mounted && form.car ? (
@@ -762,6 +971,76 @@ export default function LoginForm() {
           </p>
         </Section>
 
+        <Section title="주유 할인·상표" note="넣은 할인은 추천 순위와 예상 비용에 반영돼요. 화면에는 오피넷 가격과 할인액을 함께 보여 줘요.">
+          <p className="text-sm text-ink-soft">할인 카드·멤버십(최대 {DISCOUNT_LIMITS.max}개)</p>
+          <div className="mt-1.5 grid gap-2">
+            {rows.map((row, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <select
+                  aria-label={`할인 ${index + 1} 상표`}
+                  value={row.brand}
+                  onChange={(event) => editRows(rows.map((item, at) => (at === index ? { ...item, brand: event.target.value as BrandKey } : item)))}
+                  className={`${SELECT} max-w-[11rem]`}
+                >
+                  {BRAND_KEYS.map((brand) => (
+                    <option key={brand} value={brand}>
+                      {brand}
+                    </option>
+                  ))}
+                </select>
+                <span className="shrink-0 text-sm text-ink-soft">리터당</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  step="any"
+                  value={row.won}
+                  onChange={(event) => editRows(rows.map((item, at) => (at === index ? { ...item, won: event.target.value } : item)))}
+                  placeholder="100"
+                  aria-label={`할인 ${index + 1} 리터당 원`}
+                  className={`${FIELD} max-w-[6rem] tabular-nums`}
+                />
+                <span className="shrink-0 text-sm text-ink-soft">원</span>
+                <button
+                  type="button"
+                  onClick={() => editRows(rows.filter((_, at) => at !== index))}
+                  className="ml-auto shrink-0 text-sm text-ink-soft underline underline-offset-4"
+                >
+                  빼기
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={rows.length >= DISCOUNT_LIMITS.max}
+            onClick={() => editRows([...rows, { brand: BRAND_KEYS.find((brand) => !rows.some((row) => row.brand === brand)) ?? BRAND_KEYS[0], won: "" }])}
+            className={`${BUTTON} mt-2.5`}
+          >
+            할인 더하기
+          </button>
+
+          <p id="exclude-label" className="mt-6 text-sm text-ink-soft">
+            빼고 싶은 상표
+          </p>
+          <div role="group" aria-labelledby="exclude-label" className="mt-1.5 flex flex-wrap gap-2">
+            {BRAND_KEYS.map((brand) => {
+              const on = form.excludeBrands.includes(brand);
+              return (
+                <button key={brand} type="button" aria-pressed={on} onClick={() => toggleBrand(brand)} className={`${CHIP} ${chipTone(on)}`}>
+                  {brand}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            {form.excludeBrands.length === BRAND_KEYS.length
+              ? "상표를 모두 빼면 추천할 주유소가 없어요."
+              : bothBrands.length > 0
+                ? `뺀 상표(${bothBrands.join(", ")})는 할인이 있어도 추천에 넣지 않아요.`
+                : "고른 상표는 근처 최저가와 추천에서 빼요. 알뜰주유소는 자영·농협·고속도로 알뜰을 모두 뜻해요."}
+          </p>
+        </Section>
+
         {error && (
           <p role="alert" className="mt-6 text-sm font-medium">
             {error}
@@ -778,8 +1057,8 @@ export default function LoginForm() {
           )}
         </div>
         <p className="mt-4 text-xs leading-relaxed text-ink-soft">
-          비밀번호 없이 이 브라우저에만 저장해요. 질문할 때 부를 이름, 위치 이름, 내 차 정보를 AI에 함께 보내고, 위치 좌표는
-          주유소 조회에만 써요. 로그아웃하면 내 정보를 지워요(알림 조건과 주유 기록은 남아요).
+          비밀번호 없이 이 브라우저에만 저장해요. 질문할 때 부를 이름, 위치 이름, 내 차 정보, 할인·뺀 상표를 AI에 함께 보내고,
+          위치 좌표(내 위치·집·회사)는 주유소 조회에만 써요. 로그아웃하면 내 정보를 지워요(알림 조건과 주유 기록은 남아요).
         </p>
       </form>
     </section>
