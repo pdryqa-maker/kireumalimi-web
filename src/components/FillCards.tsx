@@ -182,12 +182,7 @@ export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost:
         </dl>
       )}
       <figure className="mt-4">
-        <figcaption className="text-xs text-ink-soft">
-          {forecast.due
-            ? "카카오톡 채널이 열리면 오늘 한 번 이렇게 보내요. 지금은 미리보기예요."
-            : `카카오톡 채널이 열리면 ${dayWithWeekday(forecast.notifyOn)} 아침에 한 번 이렇게 보내요. 지금은 미리보기예요.`}
-        </figcaption>
-        <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
+        <blockquote className="rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
           {forecastMessage(forecast, cost)}
         </blockquote>
       </figure>

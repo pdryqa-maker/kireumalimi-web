@@ -2,7 +2,6 @@
 
 // 간편 로그인: 부를 이름, 내 위치, 내 차를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AMOUNT_CHOICES, AMOUNT_LIMITS, amountShort, cleanWon, fullNote } from "@/lib/fillAmount";
@@ -18,7 +17,8 @@ import {
 } from "@/lib/fuelEconomy";
 import { inKorea, toKatec } from "@/lib/katec";
 import { cleanText, fuelName, GUEST, LIMITS, PROFILE_FUELS, profileStore, saveProfile, signedIn, type Profile } from "@/lib/profile";
-import { LocateIcon } from "./icons";
+import { CameraIcon, LocateIcon } from "./icons";
+import { shrinkPhoto } from "./photo";
 import { useFullLiters } from "./useFill";
 import { useMounted, useProfile } from "./useStored";
 
@@ -29,6 +29,40 @@ const FIELD =
 const BUTTON = "rounded-full px-4 py-2.5 text-sm font-semibold shadow-raised-sm active:shadow-inset-sm disabled:opacity-50";
 const SELECT = `${FIELD} appearance-none pr-10`;
 const round100 = (value: number) => Math.round(value / 100) * 100;
+
+// 계기판 사진은 채팅과 같은 AI 답변(/api/chat)으로 읽는다. 한 번 읽을 때마다 AI 답변 한도를 하나 쓴다.
+const DASHBOARD_QUESTION = "계기판 사진으로 내 연비 맞춰 줘";
+type DashboardRead =
+  | { state: "busy" }
+  | { state: "found"; kmpl: number; date: string }
+  | { state: "applied"; kmpl: number }
+  | { state: "note"; text: string };
+
+async function readDashboardKmpl(file: File): Promise<DashboardRead> {
+  const photo = await shrinkPhoto(file);
+  if (!photo) return { state: "note", text: "사진을 읽지 못했어요. 계기판을 JPG나 PNG 사진으로 다시 골라 주세요." };
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: DASHBOARD_QUESTION }],
+        image: { mediaType: photo.mediaType, data: photo.data },
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    if (response.status === 429) return { state: "note", text: "지금은 사진을 더 읽을 수 없어요. 잠시 뒤나 내일 다시 찍어 주세요." };
+    if (!response.ok) return { state: "note", text: body?.error ?? "사진을 읽지 못했어요. 잠시 뒤 다시 시도해 주세요." };
+    const kmpl = body?.dashboard?.averageKmpl;
+    const date = body?.dashboard?.date;
+    if (typeof kmpl === "number" && isKmpl(kmpl) && typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return { state: "found", kmpl, date };
+    }
+    return { state: "note", text: "평균 연비를 읽지 못했어요. 계기판에 평균 연비(km/L)가 보이게 한 뒤 다시 찍어 주세요." };
+  } catch {
+    return { state: "note", text: "사진을 보내지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요." };
+  }
+}
 
 async function loadAreas(sido = ""): Promise<Area[]> {
   const response = await fetch(`/api/areas${sido ? `?sido=${sido}` : ""}`);
@@ -145,6 +179,11 @@ export default function LoginForm() {
   const [areaNote, setAreaNote] = useState("");
   const [picking, setPicking] = useState(false);
   const lookupRef = useRef(0); // 위치·지역 찾기가 늦게 끝나 나중 입력을 덮지 않도록 순번을 센다
+  // 계기판 사진: 찍기는 휴대폰 카메라를 바로 열고(capture), 사진 고르기는 앨범에서 고른다.
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const albumRef = useRef<HTMLInputElement>(null);
+  const readRef = useRef(0); // 사진을 다시 고르면 앞 사진의 늦은 결과는 버린다
+  const [dashboardRead, setDashboardRead] = useState<DashboardRead | null>(null);
   const [error, setError] = useState("");
   // 직접 입력한 금액. 고르는 값에 없는 금액이 저장돼 있으면 처음부터 직접 입력으로 연다.
   const [customWon, setCustomWon] = useState<string | null>(null);
@@ -185,6 +224,22 @@ export default function LoginForm() {
 
   function pickSize(size: CarSize) {
     edit({ size, kmplSource: "size", fullLiters: sizeFullLiters(size) });
+  }
+
+  async function onDashboardPhoto(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const seq = ++readRef.current;
+    setDashboardRead({ state: "busy" });
+    const result = await readDashboardKmpl(file);
+    if (seq === readRef.current) setDashboardRead(result);
+  }
+
+  // 읽은 평균 연비를 내 연비로 쓴다. 저장을 눌러야 남는다.
+  function applyDashboardKmpl(kmpl: number, date: string) {
+    edit({ reading: { kind: "dashboard", kmpl, date, from: null, km: null, liters: null }, kmplSource: "dashboard" });
+    setDashboardRead({ state: "applied", kmpl });
   }
 
   // 현재 위치로 찾기: 휴대폰 위치를 받고, 그 위치가 속한 시군구를 내 지역으로 함께 정한다.
@@ -649,15 +704,58 @@ export default function LoginForm() {
               )}
             </div>
           </div>
-          <p className="mt-3 text-sm leading-relaxed">
-            <Link href="/records" className="font-semibold underline underline-offset-4">
-              더 정확하게 하려면 계기판도 찍어 주세요
-            </Link>
-            <span className="mt-0.5 block text-xs text-ink-soft">
-              내 기록에서 계기판 사진을 올리면 평균 연비를 내 연비로 쓸 수 있어요. 가득 넣을 때마다 영수증과 누적 주행거리를 남기면
-              두 번째 가득부터 실제 연비(달린 거리 ÷ 넣은 양)로 셈해요.
-            </span>
-          </p>
+          <div className="mt-4">
+            <p className="text-sm font-semibold">더 정확하게 하려면 계기판을 찍어 주세요</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">
+              계기판의 평균 연비를 읽어 내 연비로 쓸 수 있어요. 가득 넣을 때마다 내 기록에 영수증과 누적 주행거리를 남기면 두 번째
+              가득부터 실제 연비(달린 거리 ÷ 넣은 양)로 셈해요.
+            </p>
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onDashboardPhoto} />
+            <input ref={albumRef} type="file" accept="image/*" hidden onChange={onDashboardPhoto} />
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <button
+                type="button"
+                onClick={() => cameraRef.current?.click()}
+                disabled={dashboardRead?.state === "busy"}
+                className={`${BUTTON} flex items-center gap-1.5`}
+              >
+                <CameraIcon className="size-4" />
+                계기판 찍기
+              </button>
+              <button
+                type="button"
+                onClick={() => albumRef.current?.click()}
+                disabled={dashboardRead?.state === "busy"}
+                className="text-sm text-ink-soft underline underline-offset-4 disabled:opacity-50"
+              >
+                사진 고르기
+              </button>
+            </div>
+            <div aria-live="polite">
+              {dashboardRead?.state === "busy" && <p className="mt-2.5 text-sm text-ink-soft">계기판 사진을 읽고 있어요…</p>}
+              {dashboardRead?.state === "note" && <p className="mt-2.5 text-sm">{dashboardRead.text}</p>}
+              {dashboardRead?.state === "applied" && (
+                <p className="mt-2.5 text-sm">
+                  내 연비를 계기판 평균 연비 {dashboardRead.kmpl}km/L로 바꿨어요. 저장하면 이 연비로 셈해요.
+                </p>
+              )}
+              {dashboardRead?.state === "found" && (
+                <div className="mt-2.5 rounded-2xl bg-canvas p-4">
+                  <p className="text-sm">
+                    읽은 평균 연비 <span className="text-lg font-bold tabular-nums">{dashboardRead.kmpl}km/L</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-ink-soft">계기판을 마지막으로 초기화한 뒤의 평균이에요.</p>
+                  <button
+                    type="button"
+                    onClick={() => applyDashboardKmpl(dashboardRead.kmpl, dashboardRead.date)}
+                    className={`${BUTTON} mt-3 bg-accent text-on-accent`}
+                  >
+                    이 연비 쓰기
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
           <p className="mt-2 text-xs leading-relaxed text-ink-soft">
             공인 연비는 {CAR_DATA.source}에 {koreanDate(CAR_DATA.registeredOn)}까지 등록된 값이에요. 실제 연비는 운전 습관과 날씨에
             따라 달라요.

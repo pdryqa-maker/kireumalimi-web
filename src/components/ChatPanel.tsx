@@ -40,6 +40,7 @@ import { FuelNews, newsHeadline, useBriefing } from "./FuelNews";
 import { basis, dayWithWeekday, koreanTime, monthDay, PUMP_NOTE, won } from "./format";
 import { CameraIcon, ChartIcon, PinIcon, PumpIcon, ReceiptIcon } from "./icons";
 import { fetchFill, useFullLiters } from "./useFill";
+import { shrinkPhoto, type Photo } from "./photo";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
@@ -50,9 +51,6 @@ const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
 const PHOTO_QUESTION = "이 사진으로 주유 기록이나 연비 남겨 줘";
 const EXPLAIN_QUESTION = "요즘 기름값 왜 이래?";
 const REPORT_QUESTION = "이번 달 주유 리포트 보여 줘";
-// 영수증·계기판 사진은 긴 변 1600px JPEG로 줄여 보낸다. 서버 한도(base64 2.8MB) 안에 들도록 품질을 낮춰 가며 맞춘다.
-const PHOTO_MAX_SIDE = 1600;
-const PHOTO_MAX_CHARS = 2_800_000;
 // 서버가 받는 대화 한도(20턴, 한 턴 500자)에 맞춘다.
 const MAX_HISTORY = 19;
 const MAX_TURN_LENGTH = 500;
@@ -106,35 +104,8 @@ type Reply =
   | { from: "bot"; summary: string; report: FuelReport }
   | { from: "bot"; error: string; retry: () => void };
 type Message = { from: "user"; text: string; photo?: string } | Reply;
-type Photo = { preview: string; mediaType: "image/jpeg"; data: string };
 type Turn = { role: "user" | "assistant"; content: string };
 type Starter = { label: string; onClick: () => void; Icon?: (props: { className?: string }) => React.ReactNode };
-
-// 고른 사진을 줄여 JPEG로 바꾼다. 휴대폰 사진은 커서 그대로 보내면 서버 한도를 넘는다.
-async function shrinkPhoto(file: File): Promise<Photo | null> {
-  if (!file.type.startsWith("image/")) return null;
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(image.naturalWidth * scale);
-    canvas.height = Math.round(image.naturalHeight * scale);
-    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    for (const quality of [0.85, 0.7, 0.55]) {
-      const preview = canvas.toDataURL("image/jpeg", quality);
-      const data = preview.slice(preview.indexOf(",") + 1);
-      if (data.length <= PHOTO_MAX_CHARS) return { preview, mediaType: "image/jpeg", data };
-    }
-    return null;
-  } catch {
-    return null;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 const fillSummary = (fill: FillProposal, status: AlertStatus) =>
   `영수증에서 읽은 주유 기록: ${fill.date} ${fill.litersOnReceipt}L(${{ proposed: "넣기 전", saved: "기록에 넣음", unsaved: "저장 못 함", dismissed: "넣지 않음" }[status]})`;
