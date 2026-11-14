@@ -8,9 +8,11 @@ import { amountName, type Amount } from "@/lib/fillAmount";
 import { fuelName, signedIn } from "@/lib/profile";
 import { ledgerStore, parseLedger } from "@/lib/savedLedger";
 import ChatPanel, { type PanelCommand, type PanelHandle } from "./ChatPanel";
-import { ConditionBar, initialPlace, placeLabel, usablePlace } from "./ConditionBar";
+import { initialPlace, NO_PLACE, placeLabel, usablePlace } from "@/lib/places";
+import { ConditionBar } from "./ConditionBar";
 import { DashboardPanel, usePanelState } from "./DashboardPanel";
 import { CarIcon, DropIcon, HomeIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
+import { openLocationPicker } from "./LocationPicker";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 type Region = { key: string; area: string; name: string };
@@ -24,13 +26,14 @@ type Box = {
   field?: { label: string; value: string; onChange: (value: string) => void; placeholder: string; empty: string };
   action: string;
   command: PanelCommand | null; // null이면 이름 칸이 비어 실행할 수 없다
+  pick?: boolean; // 출발 위치나 내 지역이 없어 버튼이 위치 고르기 창을 연다
 };
 
 const FIELD =
   "w-full min-w-0 rounded-full bg-transparent px-3.5 py-2 text-[15px] shadow-inset-sm placeholder:text-ink-soft focus-visible:outline-offset-1";
 
 function FeatureBox({ box, locked, onRun }: { box: Box; locked: boolean; onRun: (command: PanelCommand) => void }) {
-  const { name, description, ai, Icon, info, field, action, command } = box;
+  const { name, description, ai, Icon, info, field, action, command, pick } = box;
   const fieldId = `box-${box.key}`;
   return (
     <li className="flex flex-col rounded-3xl bg-ground p-5 shadow-raised">
@@ -67,8 +70,8 @@ function FeatureBox({ box, locked, onRun }: { box: Box; locked: boolean; onRun: 
       <div className="mt-auto flex justify-end pt-4">
         <button
           type="button"
-          disabled={locked || !command}
-          onClick={() => command && onRun(command)}
+          disabled={locked || (!command && !pick)}
+          onClick={() => (pick ? openLocationPicker() : command && onRun(command))}
           className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-on-accent disabled:cursor-default disabled:bg-canvas disabled:text-ink-soft"
         >
           {action}
@@ -89,7 +92,10 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
   const amount = amountChoice ?? profile.amount;
   const place = usablePlace(placeChoice ?? initialPlace(profile), profile);
   const placeName = placeLabel(place, profile);
-  const homeArea = profile.area ?? { code: region.area, name: region.name };
+  const homeArea = profile.area;
+  // 출발 위치(또는 내 지역)가 필요한 상자를 고르기 전에 누르면 위치 고르기 창을 연다.
+  const needsPlace = place === NO_PLACE ? { info: "출발 위치를 먼저 골라 주세요", action: "위치 고르기", pick: true } : {};
+  const needsArea = !homeArea ? { info: "내 지역을 먼저 골라 주세요", action: "위치 고르기", pick: true } : {};
 
   // 이름이 필요한 상자는 마지막 영수증 주유소를 미리 넣는다. 이용자가 고치면 그 값을 쓴다.
   const lastStation = (mounted ? ledger.findLast((entry) => entry.stationName)?.stationName : null) ?? "";
@@ -118,6 +124,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
       info: `${fuelText} · ${placeName} 반경 5km`,
       action: "보기",
       command: { kind: "nearby" },
+      ...needsPlace,
     },
     {
       key: "total-cost",
@@ -128,6 +135,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
       info: `${fuelText} · ${placeName} 출발 · ${amountName(amount)} · 연비 ${profile.kmpl}km/L`,
       action: "보기",
       command: { kind: "totalCost" },
+      ...needsPlace,
     },
     {
       key: "commute",
@@ -175,6 +183,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
       info: `${placeName} 근처`,
       action: "찾기",
       command: { kind: "ask", question: `${placeName} 근처 요소수 재고 있는 주유소 알려 줘` },
+      ...needsPlace,
     },
     {
       key: "highway",
@@ -194,6 +203,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
       command: destination.trim()
         ? { kind: "ask", question: `${placeName}에서 ${destination.trim()} 가는 길, 휴게소 어디서 넣을까?` }
         : null,
+      ...needsPlace,
     },
     {
       key: "standing",
@@ -218,9 +228,10 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
       description: "알뜰주유소가 동네 평균보다 정말 싼지 봐요",
       ai: true,
       Icon: ReceiptIcon,
-      info: `내 지역(${homeArea.name}) 기준 · ${fuelText}`,
+      info: `내 지역(${homeArea?.name}) 기준 · ${fuelText}`,
       action: "확인",
-      command: { kind: "ask", question: `${homeArea.name} 알뜰주유소, 진짜 싼 거 맞아?` },
+      command: { kind: "ask", question: `${homeArea?.name} 알뜰주유소, 진짜 싼 거 맞아?` },
+      ...needsArea,
     },
   ];
 
@@ -252,7 +263,10 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
           region={region}
           conditions={{ fuel, place, amount }}
           onActivity={onActivity}
-          examples={["울산 남구에서 제일 싼 경유 어디야?", `${placeName}에서 LPG 충전소 거리까지 따지면 어디가 나아?`]}
+          examples={[
+            "울산 남구에서 제일 싼 경유 어디야?",
+            placeName ? `${placeName}에서 LPG 충전소 거리까지 따지면 어디가 나아?` : "부산 해운대구 알뜰주유소, 진짜 싼 거 맞아?",
+          ]}
         />
       </DashboardPanel>
     </div>

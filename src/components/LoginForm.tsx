@@ -2,6 +2,7 @@
 
 // 간편 로그인: 부를 이름, 내 위치, 자주 가는 곳, 내 차, 주유 할인·뺀 상표를 받아 이 브라우저에 저장한다. 비밀번호는 받지 않는다.
 // 위치는 두 가지로 받는다. 현재 위치로 찾기(100m 단위로 줄여 저장하고 시군구도 함께 정함) 또는 직접 입력하기(시도·시군구).
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AMOUNT_CHOICES, AMOUNT_LIMITS, amountShort, cleanWon, fullNote } from "@/lib/fillAmount";
@@ -30,12 +31,11 @@ import {
   type MyPlace,
   type Profile,
 } from "@/lib/profile";
+import { loadAreas, type Area } from "./areaApi";
 import { CameraIcon, LocateIcon } from "./icons";
 import { shrinkPhoto } from "./photo";
 import { useFullLiters } from "./useFill";
 import { useMounted, useProfile } from "./useStored";
-
-type Area = { code: string; name: string };
 
 const FIELD =
   "w-full min-w-0 rounded-2xl bg-ground px-4 py-3 text-[15px] shadow-inset-sm placeholder:text-ink-soft focus-visible:outline-offset-1";
@@ -75,13 +75,6 @@ async function readDashboardKmpl(file: File): Promise<DashboardRead> {
   } catch {
     return { state: "note", text: "사진을 보내지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요." };
   }
-}
-
-async function loadAreas(sido = ""): Promise<Area[]> {
-  const response = await fetch(`/api/areas${sido ? `?sido=${sido}` : ""}`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !Array.isArray(body?.areas)) throw new Error(body?.error ?? "지역 목록을 불러오지 못했어요.");
-  return body.areas;
 }
 
 const koreanDate = (date: string) => {
@@ -269,7 +262,10 @@ function PlaceRow({
           목록에서 고르기
         </button>
       </div>
-      {picking && (
+      {picking && groups.length === 0 && (
+        <p className="mt-2.5 text-sm text-ink-soft">내 지역을 먼저 고르면 그 지역의 시군구청·읍면 목록에서 고를 수 있어요.</p>
+      )}
+      {picking && groups.length > 0 && (
         <select aria-label={`${title} 고르기`} value="" onChange={(event) => pick(event.target.value)} className={`${SELECT} mt-2.5`}>
           <option value="">{title === "집" ? "집과 가까운 곳 고르기" : "회사와 가까운 곳 고르기"}</option>
           {groups.map((group) => (
@@ -1058,7 +1054,10 @@ export default function LoginForm() {
         </div>
         <p className="mt-4 text-xs leading-relaxed text-ink-soft">
           비밀번호 없이 이 브라우저에만 저장해요. 질문할 때 부를 이름, 위치 이름, 내 차 정보, 할인·뺀 상표를 AI에 함께 보내고,
-          위치 좌표(내 위치·집·회사)는 주유소 조회에만 써요. 로그아웃하면 내 정보를 지워요(알림 조건과 주유 기록은 남아요).
+          위치 좌표(내 위치·집·회사)는 주유소 조회에만 써요. 로그아웃하면 내 정보를 지워요(알림 조건과 주유 기록은 남아요).{" "}
+          <Link href="/privacy" className="underline underline-offset-4">
+            개인정보 처리방침
+          </Link>
         </p>
       </form>
     </section>

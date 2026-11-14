@@ -4,7 +4,6 @@
 // 내 기록 요약과 알림 탭의 '지금 점검'이 함께 쓴다.
 import { josa, type FavoriteCheck, type UreaCheck } from "@/lib/conditions";
 import { prefsQuery } from "@/lib/discounts";
-import { DEMO_REGION } from "@/lib/places";
 import { prefsOf, type Profile } from "@/lib/profile";
 import { ledgerForMonth } from "@/lib/savedLedger";
 import type { VsArea } from "@/lib/savedVsArea";
@@ -51,9 +50,11 @@ export async function checkFavorite(name: string, profile: Profile, monthly: { l
 }
 
 // 요소수 재고: 집, 없으면 내 위치 근처. 둘 다 없으면 내 시도에서 가격 낮은 곳.
+// 재고는 시도 단위로 받으므로 내 지역을 고르지 않았으면 부르지 않는다(다른 지역을 가정하지 않는다).
 export async function checkUrea(profile: Profile): Promise<UreaCheck> {
+  if (!profile.area) return { error: "요소수 재고는 시도 단위로 받아요. 위치 고르기에서 내 지역을 골라 주세요." };
   const origin = profile.home ?? profile.location;
-  const params = new URLSearchParams({ sido: (profile.area?.code ?? DEMO_REGION.area).slice(0, 2) });
+  const params = new URLSearchParams({ sido: profile.area.code.slice(0, 2) });
   if (origin) {
     params.set("x", String(origin.x));
     params.set("y", String(origin.y));

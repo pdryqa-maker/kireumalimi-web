@@ -14,6 +14,7 @@ import { ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
 import { fuelName, signedIn } from "@/lib/profile";
 import { parseWatch, saveWatch, watchStore, type Watch } from "@/lib/watchSettings";
+import { loadAreas, type Area } from "./areaApi";
 import { FillLogCard } from "./FillCards";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
 import { checkFavorite, checkUrea, type FavoriteResult } from "./personalChecks";
@@ -27,18 +28,6 @@ const MIN_WON = 500;
 const MAX_WON = 3000;
 
 const PRICE_FUELS = ["휘발유", "경유", "자동차부탄"];
-
-type Area = { code: string; name: string };
-// 내 지역이 없을 때 처음 보여 줄 지역(시연 지역)
-const DEFAULT_AREA: Area = { code: "1831", name: "울산 울주군" };
-
-// 오피넷 지역 목록. sido를 비우면 시도, 시도 코드를 주면 그 시도의 시군구.
-async function loadAreas(sido = ""): Promise<Area[]> {
-  const response = await fetch(`/api/areas${sido ? `?sido=${sido}` : ""}`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !Array.isArray(body?.areas)) throw new Error();
-  return body.areas;
-}
 
 function Chevron() {
   return (
@@ -139,7 +128,7 @@ export default function AlertsManager() {
   // 오늘 날짜와 지금 시각은 브라우저에서만 읽는다(서버에서 미리 그릴 때 시각이 굳지 않게).
   const today = mounted ? kstClock().today : "";
   const entries = mergeLedger(ledger, fills);
-  const { fill, personal, favorite, monthly } = usePersonal(profile, entries, today || null, profile.area?.code ?? DEFAULT_AREA.code);
+  const { fill, personal, favorite, monthly } = usePersonal(profile, entries, today || null, profile.area?.code ?? ""); // 지역이 없으면 전국 평균
   const car = { fuel: profile.fuel, fill };
   const carAmount = fill?.label ?? amountName(profile.amount);
   const [checks, setChecks] = useState<Record<string, PriceCheck>>({});
@@ -149,10 +138,10 @@ export default function AlertsManager() {
   const [fillOpen, setFillOpen] = useState(false);
   const [fuelChoice, setPriceFuel] = useState<string | null>(null);
   const priceFuel = fuelChoice ?? (PRICE_FUELS.includes(profile.fuel) ? profile.fuel : PRICE_FUELS[0]);
-  // 가격 조건 지역: 전국 시도·시군구에서 고른다. 처음에는 내 지역(없으면 울산 울주군)을 골라 둔다.
+  // 가격 조건 지역: 전국 시도·시군구에서 고른다. 처음에는 내 지역을 골라 두고, 없으면 비워 둔다.
   const [picked, setPicked] = useState<Area | null>(null);
-  const area = picked ?? (mounted && profile.area ? profile.area : DEFAULT_AREA);
-  const sidoCode = area.code.slice(0, 2);
+  const area = picked ?? (mounted ? profile.area : null);
+  const sidoCode = area?.code.slice(0, 2) ?? "";
   const [sidos, setSidos] = useState<Area[] | null>(null);
   const [sigunLists, setSigunLists] = useState<Record<string, Area[]>>({});
   const [areaError, setAreaError] = useState(false);
@@ -166,7 +155,7 @@ export default function AlertsManager() {
     };
   }, []);
   useEffect(() => {
-    if (sigunLists[sidoCode]) return;
+    if (!sidoCode || sigunLists[sidoCode]) return;
     let alive = true;
     loadAreas(sidoCode)
       .then((list) => alive && setSigunLists((current) => ({ ...current, [sidoCode]: list })))
@@ -175,19 +164,25 @@ export default function AlertsManager() {
       alive = false;
     };
   }, [sidoCode, sigunLists]);
-  const sidoName = sidos?.find((sido) => sido.code === sidoCode)?.name ?? area.name.split(" ")[0];
+  const sidoName = sidos?.find((sido) => sido.code === sidoCode)?.name ?? area?.name.split(" ")[0] ?? "";
   const siguns = sigunLists[sidoCode] ?? [];
-  const sidoOptions: [string, string][] = sidos ? sidos.map((sido) => [sido.code, sido.name]) : [[sidoCode, sidoName]];
-  const sigunOptions: [string, string][] = [
-    ["", `${sidoName} 전체`],
-    ...(siguns.length > 0
-      ? siguns.map((sigun): [string, string] => [sigun.code, sigun.name])
-      : area.code.length === 4
-        ? [[area.code, area.name.replace(`${sidoName} `, "")] as [string, string]]
-        : []),
+  const sidoOptions: [string, string][] = [
+    ...(area ? [] : [["", "시도 고르기"] as [string, string]]),
+    ...(sidos ? sidos.map((sido): [string, string] => [sido.code, sido.name]) : area ? [[sidoCode, sidoName] as [string, string]] : []),
   ];
-  const chooseSido = (code: string) => setPicked({ code, name: sidos?.find((sido) => sido.code === code)?.name ?? code });
+  const sigunOptions: [string, string][] = !area
+    ? [["", "시군구 전체"]]
+    : [
+        ["", `${sidoName} 전체`],
+        ...(siguns.length > 0
+          ? siguns.map((sigun): [string, string] => [sigun.code, sigun.name])
+          : area.code.length === 4
+            ? [[area.code, area.name.replace(`${sidoName} `, "")] as [string, string]]
+            : []),
+      ];
+  const chooseSido = (code: string) => code && setPicked({ code, name: sidos?.find((sido) => sido.code === code)?.name ?? code });
   const chooseSigun = (code: string) => {
+    if (!sidoCode) return;
     const sigun = siguns.find((item) => item.code === code);
     setPicked(sigun ? { code, name: `${sidoName} ${sigun.name}` } : { code: sidoCode, name: sidoName });
   };
@@ -201,6 +196,10 @@ export default function AlertsManager() {
   function addPrice(event: React.FormEvent) {
     event.preventDefault();
     const value = Number(belowWon);
+    if (!area) {
+      setPriceError("알림을 걸 지역을 골라 주세요.");
+      return;
+    }
     if (!Number.isInteger(value) || value < MIN_WON || value > MAX_WON) {
       setPriceError(`가격은 ${won(MIN_WON)}~${won(MAX_WON)}원 사이 정수로 넣어 주세요.`);
       return;
@@ -262,7 +261,7 @@ export default function AlertsManager() {
         <form onSubmit={addPrice} className="mt-2.5 flex flex-wrap items-center gap-2.5" aria-label="가격 조건 추가">
           <Select label="가격 조건 유종" value={priceFuel} options={PRICE_FUELS.map((fuel) => [fuel, fuelName(fuel)])} onChange={setPriceFuel} />
           <Select label="가격 조건 시도" value={sidoCode} options={sidoOptions} onChange={chooseSido} />
-          <Select label="가격 조건 시군구" value={area.code.length === 4 ? area.code : ""} options={sigunOptions} onChange={chooseSigun} />
+          <Select label="가격 조건 시군구" value={area?.code.length === 4 ? area.code : ""} options={sigunOptions} onChange={chooseSigun} />
           <span className="flex items-center gap-1.5">
             <input
               type="number"

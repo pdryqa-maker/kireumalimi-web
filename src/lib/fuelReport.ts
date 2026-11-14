@@ -12,7 +12,6 @@ const PAST_CACHE_MS = 24 * 60 * 60 * 1000; // 지난 날짜의 평균은 바뀌�
 const RECENT_CACHE_MS = 60 * 60 * 1000; // 최근 이틀은 평균이 아직 안 나왔을 수 있어 1시간만 재사용한다
 const FALLBACK_DAYS = 3; // 그날 평균이 없으면 이 일수 안의 가장 가까운 지난 날 평균을 쓴다
 const MAX_AVERAGE_CALLS = 6; // 한 번에 7일씩 받으므로 한 달은 다섯 번이면 된다
-const DEFAULT_SIDO = "18"; // 지역을 넣지 않은 이용자는 울산 기준
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -84,14 +83,15 @@ export async function fuelReport(ledger: LedgerEntry[], { fuel, kmpl, area, mont
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(target) || target > thisMonth || target < oldest) {
     throw new RangeError("리포트는 최근 12개월 안의 달(YYYY-MM)만 볼 수 있습니다.");
   }
-  const sido = area?.slice(0, 2) || DEFAULT_SIDO;
+  const sido = area ? area.slice(0, 2) : null; // 지역을 고르지 않았으면 시도 평균과 견주지 않는다
   const entries = ledger.filter((entry) => entry.date.startsWith(target));
   const before = ledger.filter((entry) => entry.date.startsWith(previousMonth(target)));
   const sum = totals(entries, kmpl);
   const prev = before.length > 0 ? totals(before, kmpl) : null;
 
   const priced = entries.filter((entry) => entry.pricePerLiter !== null && entry.liters !== null);
-  const averages = priced.length > 0 ? await dailyAverages(sido, prodcd, priced.map((entry) => entry.date), today) : new Map<string, number>();
+  const averages =
+    sido && priced.length > 0 ? await dailyAverages(sido, prodcd, priced.map((entry) => entry.date), today) : new Map<string, number>();
   const compared = priced
     .map((entry) => {
       const found = averageOn(averages, entry.date);
@@ -126,7 +126,7 @@ export async function fuelReport(ledger: LedgerEntry[], { fuel, kmpl, area, mont
     ...sum,
     avgGapDays: gaps.length > 0 ? round1(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
     vsArea:
-      compared.length > 0
+      sido && compared.length > 0
         ? {
             area: (await areaName(sido)).replace(/ 전체$/, ""),
             comparedFills: compared.length,

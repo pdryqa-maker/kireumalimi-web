@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signedIn } from "@/lib/profile";
 import { BellIcon, CompassIcon, HomeIcon, RecordsIcon, UserIcon } from "./icons";
+import { LocationPicker } from "./LocationPicker";
 import { useMounted, useProfile } from "./useStored";
 
 // 홈은 챗봇, 탐색·내 기록은 기능과 내 숫자가 먼저 보이는 대시보드(결과는 대시보드 안 패널), 알림은 알림 조건. 내 정보는 프로필 버튼으로 연다.
@@ -100,8 +101,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="shell-width mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 sm:px-6">{children}</main>
         <footer className="shell-footer px-4 pt-6 pb-28 text-center text-xs text-ink-soft lg:pb-5">
-          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이
+          유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이 ·{" "}
+          <Link href="/privacy" className="underline underline-offset-4">
+            개인정보 처리방침
+          </Link>
         </footer>
+        <LocationPicker />
 
         <nav
           aria-label="주 메뉴"

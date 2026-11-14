@@ -115,9 +115,9 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
   const sum = totals(monthEntries, economy.kmpl);
   const hasRecords = entries.length > 0;
 
-  // "시도 평균보다" 한 줄: 그 달 단가 있는 기록이 있을 때만, 처음 볼 때 한 번 받는다.
-  const priced = month ? monthFingerprint(entries, month) : "";
-  const fingerprint = vsAreaKey(profile.fuel, profile.area?.code ?? "", entries, month);
+  // "시도 평균보다" 한 줄: 내 지역을 골랐고 그 달 단가 있는 기록이 있을 때만, 처음 볼 때 한 번 받는다.
+  const priced = month && profile.area ? monthFingerprint(entries, month) : "";
+  const fingerprint = priced ? vsAreaKey(profile.fuel, profile.area?.code ?? "", entries, month) : "";
   // 오래 남기지 않는 결과(이번 달, 일부만 견줌, 오피넷 장애)는 이 화면에서만 들고 있어 다시 그릴 때 또 부르지 않는다.
   const [shown, setShown] = useState<Record<string, VsArea>>({});
   // 이번 달 결과(provisionalOn)는 받은 그날만 쓴다.
@@ -221,7 +221,7 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
         </div>
 
         {mounted && today && (
-          <PersonalSummary profile={profile} entries={entries} today={today} areaCode={profile.area?.code ?? region.area} vsArea={vsArea} />
+          <PersonalSummary profile={profile} entries={entries} today={today} areaCode={profile.area?.code ?? ""} vsArea={vsArea} />
         )}
 
         <section aria-label={`${label} 숫자`} className="mt-5">
