@@ -12,7 +12,8 @@ import { cleanAlerts, cleanFills, type AccountData } from "./fields";
 export const isFilledProfile = (profile: Profile) =>
   JSON.stringify(cleanProfile({ ...profile, name: "" })) !== JSON.stringify(cleanProfile(GUEST));
 
-export const anyWatch = (watch: Watch) => watch.tax || watch.cap || watch.forecast;
+// 알림 탭에서 켜는 조건이 늘어나도 따라가도록 칸 이름을 적지 않고 전부 본다.
+export const anyWatch = (watch: Watch) => Object.values(watch).some((on) => on === true);
 
 const byDate = <T extends { date: string }>(local: T[], remote: T[]) => {
   const map = new Map<string, T>();
