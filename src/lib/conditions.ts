@@ -168,7 +168,7 @@ function forecastNotice({ plan, cost, tax, amount, monthlyKm }: Personal): Notic
       `${day}쯤 주유할 때예요.` +
       (cost ? ` ${costPhrase(cost, amount)}.` : "") +
       taxText +
-      (plan.basis === "monthlyKm" ? " 기록이 없어 한 달 주행거리로 셈했어요." : "") +
+      (plan.basis === "monthlyKm" ? ` 기록이 ${plan.lastDate ? "모자라" : "없어"} 한 달 주행거리로 셈했어요.` : "") +
       " 알림 받는 날 가격으로 근처에서 덜 드는 곳을 골라 드려요.",
   };
 }

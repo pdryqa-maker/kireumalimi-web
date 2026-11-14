@@ -7,7 +7,7 @@ import { useState } from "react";
 import { wonName } from "@/lib/fillAmount";
 import { monthFingerprint, totals, vsAreaFinal, vsAreaKey } from "@/lib/fillTotals";
 import type { LedgerEntry } from "@/lib/ledger";
-import { costPhrase, planLiters, taxLine, yearSavings } from "@/lib/personal";
+import { costPhrase, monthDistance, nextMonthsToCount, planLiters, taxLine, yearSavings } from "@/lib/personal";
 import type { Profile } from "@/lib/profile";
 import { parseVsArea, vsAreaStore, type VsArea } from "@/lib/savedVsArea";
 import { dayWithWeekday, won } from "./format";
@@ -28,13 +28,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 const Sub = ({ children }: { children: React.ReactNode }) => <p className="mt-0.5 text-sm leading-relaxed text-ink-soft">{children}</p>;
 
-function favoriteText(result: FavoriteResult) {
+// 영수증 이름과 오피넷 이름이 다르면 어느 곳과 견줬는지 먼저 밝힌다.
+function favoriteText(result: FavoriteResult, receiptName: string) {
   if ("error" in result) return result.error;
-  const { areaName, diffWon, cheaper, monthlySaveWon } = result;
+  const { name, areaName, diffWon, cheaper, monthlySaveWon } = result;
+  const matched = name !== receiptName ? `오피넷 '${name}' 기준 · ` : "";
   const gap = diffWon === 0 ? `${areaName} 평균과 같아요` : `${areaName} 평균보다 리터당 ${won(Math.abs(diffWon))}원 ${diffWon > 0 ? "비싸요" : "싸요"}`;
-  if (!cheaper) return `${gap} · 반경 5km 안에 이곳보다 덜 드는 곳이 없어요.`;
+  if (!cheaper) return `${matched}${gap} · 반경 5km 안에 이곳보다 덜 드는 곳이 없어요.`;
   const place = `근처 ${cheaper.name} 리터당 ${won(cheaper.paidPrice)}원${cheaper.discountWon ? "(할인 반영)" : ""}, 직선 ${cheaper.distanceKm}km`;
-  return `${gap} · ${place}${monthlySaveWon ? ` · 바꾸면 한 달 약 ${wonName(monthlySaveWon)} 덜 들어요` : ""}`;
+  return `${matched}${gap} · ${place}${monthlySaveWon ? ` · 바꾸면 한 달 약 ${wonName(monthlySaveWon)} 덜 들어요` : ""}`;
 }
 
 // 실측 연비 추이: 가득→가득 구간마다 작은 막대 하나. 가장 낮은 값도 보이게 바닥을 30%로 둔다.
@@ -73,6 +75,7 @@ export default function PersonalSummary({
   const [checking, setChecking] = useState(false);
   const [counting, setCounting] = useState(false);
   const [countNote, setCountNote] = useState("");
+  const [failedMonths, setFailedMonths] = useState<string[]>([]);
 
   const areaKey = profile.area?.code ?? "";
   const savings = yearSavings({ stored: vsArea, entries, fuel: profile.fuel, areaCode: areaKey, today });
@@ -92,11 +95,13 @@ export default function PersonalSummary({
   }
 
   // 올해 아직 견주지 않은 지난 달을 앞에서부터 2달씩 받는다. 다 견준 달만 남긴다(vsAreaFinal).
+  // 이번 화면에서 실패한 달은 뒤로 미뤄, 같은 두 달만 계속 부르지 않는다.
   async function countMore() {
     setCounting(true);
     setCountNote("");
     let missed = 0;
-    for (const month of savings.uncheckedMonths.slice(0, MONTHS_PER_CLICK)) {
+    const failedNow: string[] = [];
+    for (const month of nextMonthsToCount(savings.uncheckedMonths, failedMonths, MONTHS_PER_CLICK)) {
       const fingerprint = vsAreaKey(profile.fuel, areaKey, entries, month);
       const priced = monthFingerprint(entries, month).split(",").length;
       try {
@@ -105,19 +110,20 @@ export default function PersonalSummary({
           vsAreaStore.write({ ...parseVsArea(vsAreaStore.read()), [month]: entry });
         } else {
           missed++;
+          failedNow.push(month);
         }
       } catch {
         missed++;
+        failedNow.push(month);
       }
     }
+    setFailedMonths((before) => [...before.filter((month) => !failedNow.includes(month)), ...failedNow]);
     if (missed > 0) setCountNote(`${missed}달은 오피넷 평균을 다 받지 못해 셈에서 뺐어요. 잠시 뒤 다시 눌러 주세요.`);
     setCounting(false);
   }
 
-  // 이번 달 예상: 지금까지 넣은 양 + 남은 주유 × 한 번 넣는 양으로 거리를 어림한다.
-  const perFillLiters = planLiters(profile.amount, fill, profile.fuel) ?? 0;
-  const projectedKm = projection ? Math.round((sum.liters + projection.remainingFills * perFillLiters) * economy.kmpl) : 0;
-  const perKm = projection && projectedKm > 0 ? Math.round(projection.projectedWon / projectedKm) : null;
+  // 이번 달 거리: 지금까지 넣은 양 + 남은 주유 × 한 번 넣는 양. 리터를 모르는 주유가 있으면 숨긴다(monthDistance).
+  const distance = monthDistance({ sum, projection, perFillLiters: planLiters(profile.amount, fill, profile.fuel), kmpl: economy.kmpl });
   const latest = trend.at(-1);
 
   return (
@@ -167,7 +173,7 @@ export default function PersonalSummary({
               </p>
               {shownFavorite && (
                 <p role="status" className="mt-1 text-sm leading-relaxed">
-                  {favoriteText(shownFavorite)}
+                  {favoriteText(shownFavorite, favorite.name)}
                 </p>
               )}
               {shownFavorite && !("error" in shownFavorite) && shownFavorite.monthlySaveWon && monthly?.basis === "monthlyKm" && (
@@ -187,8 +193,8 @@ export default function PersonalSummary({
               <p>
                 예상 <span className="font-semibold">{wonName(projection.projectedWon)}</span>
                 {projection.lastMonthWon !== null ? `(지난달 ${wonName(projection.lastMonthWon)})` : ""}
-                {projectedKm > 0 ? ` · 약 ${won(projectedKm)}km` : ""}
-                {perKm ? ` · 1km당 ${won(perKm)}원` : ""}
+                {distance.km !== null ? ` · 약 ${won(distance.km)}km` : ""}
+                {distance.wonPerKm !== null ? ` · 1km당 ${won(distance.wonPerKm)}원` : ""}
               </p>
               <Sub>
                 지금까지 {projection.spentWon > 0 ? wonName(projection.spentWon) : "0원"}
@@ -197,8 +203,9 @@ export default function PersonalSummary({
             </>
           ) : sum.fills > 0 ? (
             <p>
-              지금까지 <span className="font-semibold">{won(sum.totalWon ?? 0)}원</span> · 약 {won(sum.estimatedKm)}km
-              {sum.wonPerKm !== null ? ` · 1km당 ${won(Math.round(sum.wonPerKm))}원` : ""}
+              지금까지 <span className="font-semibold">{won(sum.totalWon ?? 0)}원</span>
+              {distance.km !== null ? ` · 약 ${won(distance.km)}km` : ""}
+              {distance.wonPerKm !== null ? ` · 1km당 ${won(distance.wonPerKm)}원` : ""}
             </p>
           ) : (
             <p className="text-ink-soft">이번 달 주유 기록이 아직 없어요.</p>

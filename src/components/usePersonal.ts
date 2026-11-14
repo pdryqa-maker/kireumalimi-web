@@ -46,7 +46,7 @@ export function usePersonal(profile: Profile, entries: LedgerEntry[], today: str
     fillLiters: planLiters(profile.amount, fill, profile.fuel),
     today,
   });
-  const cost = fillCost({ amount: profile.amount, fill, areaPrice, discounts: profile.discounts });
+  const cost = fillCost({ amount: profile.amount, fill, areaPrice, discounts: profile.discounts, excludeBrands: profile.excludeBrands });
   const tax = taxSchedule({ fuel: profile.fuel, plan, liters, today });
   // 한 번에 드는 돈: 예상 비용, 없으면 금액으로 넣는 사람은 그 금액, 그래도 없으면 기록의 평소 금액.
   const perFillWon = cost?.won ?? (profile.amount !== "full" ? profile.amount : null) ?? plan?.typicalWon ?? null;

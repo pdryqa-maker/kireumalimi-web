@@ -1,7 +1,7 @@
 // 개인 계산: 내 정보와 주유 장부로 다음 주유, 예상 비용, 유류세 일정, 이번 달 예상, 단골, 아낀 돈, 연비 추이를 셈한다.
 // 내 기록 요약과 알림 문구가 같은 숫자를 쓰도록 한 곳에 둔다. AI도 오피넷도 부르지 않는다(평균가는 받아서 넘긴다).
 import { monthDay, won } from "@/components/format";
-import { bestDiscount, type Discount } from "./discounts";
+import { bestDiscount, type BrandKey, type Discount } from "./discounts";
 import { amountName, wonName, type Amount, type Fill } from "./fillAmount";
 import { addDays, daysBetween, forecastNextFill, MIN_RECORDS, notifyDay } from "./fillForecast";
 import { forecastRecords, previousMonth, totals, vsAreaKey } from "./fillTotals";
@@ -13,6 +13,7 @@ import { coreName } from "./stationName";
 
 export const DAYS_PER_MONTH = 30;
 const FAVORITE_DAYS = 90;
+const MIN_SPAN_DAYS = 7; // 같은 주에 두 번 넣은 기록으로 한 달 양이 부풀지 않게
 const TREND_SPANS = 6;
 
 const later = (a: string, b: string) => (a > b ? a : b);
@@ -63,7 +64,9 @@ export function fillPlan({
   if (!monthlyKm || !fillLiters || !(fillLiters > 0)) return null;
   const gapDays = Math.max(1, Math.round((fillLiters * kmpl) / (monthlyKm / DAYS_PER_MONTH)));
   const lastDate = sortedByDate(entries).at(-1)?.date ?? null;
-  const nextDate = addDays(lastDate ?? today, gapDays);
+  // 마지막 기록에서 한 번 넣는 간격이 이미 지났으면 그 뒤 주유를 적지 않은 것이라 오늘부터 셈한다.
+  const from = lastDate && addDays(lastDate, gapDays) >= today ? lastDate : today;
+  const nextDate = addDays(from, gapDays);
   return { basis: "monthlyKm", gapDays, lastDate, nextDate, notifyOn: notifyDay(nextDate, today), due: nextDate <= today, typicalWon: null };
 }
 
@@ -80,7 +83,7 @@ export function planLiters(amount: Amount, fill: Pick<Fill, "liters"> | null, fu
 export type AreaPrice = { date: string; fuel: string; area: string; areaName: string; price: number; scope: "local" | "national" };
 
 // 한 번 넣을 때의 예상 비용. 금액으로 넣으면 그 금액이 비용이고, 가득이면 평균가로 셈한다.
-// 평소 넣는 상표를 모르므로 할인은 가장 큰 것으로 셈한다.
+// 평소 넣는 상표를 모르므로 할인은 가장 큰 것으로 셈한다. 뺀 상표의 할인은 쓰지 않는다(추천에 넣지 않으므로).
 export type FillCost = {
   kind: "won" | "full";
   won: number;
@@ -95,14 +98,16 @@ export function fillCost({
   fill,
   areaPrice,
   discounts,
+  excludeBrands = [],
 }: {
   amount: Amount;
   fill: Pick<Fill, "liters"> | null;
   areaPrice: AreaPrice | null;
   discounts: Discount[];
+  excludeBrands?: BrandKey[];
 }): FillCost | null {
   if (!fill) return null;
-  const discount = bestDiscount(discounts);
+  const discount = bestDiscount(discounts.filter((item) => !excludeBrands.includes(item.brand)));
   const off = discount?.wonPerLiter ?? 0;
   const discountSavedWon = Math.round(fill.liters * off);
   if (amount !== "full") {
@@ -185,6 +190,27 @@ const monthWon = (entries: LedgerEntry[], month: string) => {
   return inMonth.length > 0 ? (totals(inMonth, 0).totalWon ?? 0) : null;
 };
 
+// 이번 달 거리와 1km당 연료비. 거리는 리터를 아는 주유로만 셈하므로 금액만 적은 주유가 있거나
+// 남은 주유의 양을 모르면 숨긴다. 1km당은 금액과 리터를 함께 아는 주유로 셈한다(totals의 wonPerKm).
+export function monthDistance({
+  sum,
+  projection,
+  perFillLiters,
+  kmpl,
+}: {
+  sum: ReturnType<typeof totals>;
+  projection: MonthProjection | null;
+  perFillLiters: number | null;
+  kmpl: number;
+}): { km: number | null; wonPerKm: number | null } {
+  const knownWonPerKm = sum.wonPerKm !== null ? Math.round(sum.wonPerKm) : null;
+  const allKnown = sum.litersUnknownFills === 0 && sum.wonUnknownFills === 0;
+  if (!projection) return { km: allKnown && sum.estimatedKm > 0 ? sum.estimatedKm : null, wonPerKm: knownWonPerKm };
+  if (!allKnown || (projection.remainingFills > 0 && !perFillLiters)) return { km: null, wonPerKm: knownWonPerKm };
+  const km = Math.round((sum.liters + projection.remainingFills * (perFillLiters ?? 0)) * kmpl);
+  return km > 0 ? { km, wonPerKm: Math.round(projection.projectedWon / km) } : { km: null, wonPerKm: knownWonPerKm };
+}
+
 export function monthProjection({
   entries,
   plan,
@@ -229,7 +255,8 @@ export function favoriteStation(entries: LedgerEntry[], today: string) {
   return { name: last.stationName!, visits: groups.get(coreName(last.stationName!))?.visits ?? 0, basis: "latest" as const };
 }
 
-// 한 달에 넣는 양(L): 최근 90일 장부로, 리터 기록이 없으면 한 달 주행거리 ÷ 연비.
+// 한 달에 넣는 양(L): 최근 90일 장부에 리터 기록이 2번 이상이면 첫 주유를 뺀 양 ÷ 첫·마지막 주유 사이 기간
+// (첫 주유는 그 전에 달린 몫이다). 아니면 한 달 주행거리 ÷ 연비, 그것도 없으면 모른다.
 export function monthlyLiters({
   entries,
   today,
@@ -243,13 +270,17 @@ export function monthlyLiters({
 }): { liters: number; basis: "records" | "monthlyKm" } | null {
   const since = addDays(today, -FAVORITE_DAYS);
   const recent = sortedByDate(entries).filter((entry) => entry.date >= since && entry.date <= today && entry.liters !== null);
-  if (recent.length > 0) {
-    const sum = recent.reduce((total, entry) => total + entry.liters!, 0);
-    const days = Math.max(DAYS_PER_MONTH, daysBetween(recent[0].date, today));
+  if (recent.length >= 2) {
+    const sum = recent.slice(1).reduce((total, entry) => total + entry.liters!, 0);
+    const days = Math.max(MIN_SPAN_DAYS, daysBetween(recent[0].date, recent.at(-1)!.date));
     return { liters: Math.round((sum / days) * DAYS_PER_MONTH), basis: "records" };
   }
   return monthlyKm ? { liters: Math.round(monthlyKm / kmpl), basis: "monthlyKm" } : null;
 }
+
+// '나머지 달도 셈하기'에서 받을 달: 이번 화면에서 실패한 달은 뒤로 미뤄 다음 달로 넘어간다.
+export const nextMonthsToCount = (unchecked: string[], failed: string[], count: number) =>
+  [...unchecked.filter((month) => !failed.includes(month)), ...unchecked.filter((month) => failed.includes(month))].slice(0, count);
 
 // 올해 아낀 돈: 이미 받아 둔 달별 시도 평균 비교를 더한다. 이번 달은 오늘 받은 결과만 쓴다.
 export function yearSavings({

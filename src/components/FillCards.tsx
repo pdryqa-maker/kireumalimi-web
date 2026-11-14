@@ -16,6 +16,7 @@ import type { FuelReport } from "@/lib/fuelReport";
 import { loadFills } from "@/lib/savedFills";
 import type { CostResult } from "./AnswerCards";
 import { dayWithWeekday, koreanTime, monthDay, won } from "./format";
+import { discountLine, excludedNote, forecastMessage } from "./stationText";
 
 const CARD = "max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised";
 const FIELD =
@@ -137,17 +138,6 @@ export function FillLogCard({ onSubmit, busy }: { onSubmit: (forecast: FillForec
   );
 }
 
-export function forecastMessage(forecast: FillForecast, cost: CostResult | null) {
-  const best = cost?.stations[0];
-  return (
-    `${dayWithWeekday(forecast.nextDate)}쯤 주유할 때예요.` +
-    (best && cost
-      ? ` ${cost.place} 근처 추천: ${best.name}, 리터당 ${won(best.price)}원(거리까지 따져 가장 덜 들어요).`
-      : "") +
-    " 알림 받는 날 가격으로 다시 골라 드려요."
-  );
-}
-
 export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost: CostResult | null }) {
   const best = cost?.stations[0];
   return (
@@ -177,9 +167,14 @@ export function ForecastCard({ forecast, cost }: { forecast: FillForecast; cost:
             {best.name} <span className="text-sm font-normal text-ink-soft">{best.brand}</span>
           </dd>
           <dd className="text-sm tabular-nums">
-            리터당 {won(best.price)}원 · 직선 {best.distanceKm}km · {koreanTime(cost.fetchedAt)} 조회
+            리터당 {won(best.paidPrice)}원 · 직선 {best.distanceKm}km · {koreanTime(cost.fetchedAt)} 조회
           </dd>
+          {discountLine(best) && <dd className="text-xs text-ink-soft tabular-nums">{discountLine(best)}</dd>}
+          {excludedNote(cost.excludedCount, false) && <dd className="mt-1 text-xs text-ink-soft">{excludedNote(cost.excludedCount, false)}</dd>}
         </dl>
+      )}
+      {cost && !best && excludedNote(cost.excludedCount, true) && (
+        <p className="mt-4 rounded-2xl px-4 py-3 text-sm shadow-inset-sm">{excludedNote(cost.excludedCount, true)}</p>
       )}
       <figure className="mt-4">
         <blockquote className="rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
