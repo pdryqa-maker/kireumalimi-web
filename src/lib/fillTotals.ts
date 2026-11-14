@@ -1,5 +1,7 @@
 // 주유 장부의 합계. 서버의 월간 리포트와 브라우저의 내 기록 대시보드가 함께 쓴다.
 // 그래서 서버 모듈(오피넷 등)을 import하지 않는다.
+import { isLiters } from "./fillAmount";
+import { MAX_RECORDS, RECORD_WON, type FillRecord } from "./fillForecast";
 import type { LedgerEntry } from "./ledger";
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
@@ -80,3 +82,27 @@ export function dotUnit(maxWon: number): 10000 | 20000 | 50000 {
   if (Math.floor(maxWon / 20000) <= MAX_DOTS) return 20000;
   return 50000;
 }
+
+// 다음 주유일 예보에 쓸 기록: 장부의 최근 5번. 금액은 결제 금액(없으면 양×단가), 양은 정수 리터로 맞춘다.
+// 예보가 받지 않는 값(100만원 넘는 금액 등)은 비워 두고, 금액도 양도 없으면 뺀다.
+export function forecastRecords(entries: LedgerEntry[]): FillRecord[] {
+  return entries
+    .slice(-MAX_RECORDS)
+    .map((entry) => {
+      const paid = paidWon(entry);
+      const liters = entry.liters === null ? null : Math.round(entry.liters);
+      return {
+        date: entry.date,
+        won: paid !== null && paid >= RECORD_WON.min && paid <= RECORD_WON.max ? paid : null,
+        liters: liters !== null && isLiters(liters) ? liters : null,
+      };
+    })
+    .filter((record) => record.won !== null || record.liters !== null);
+}
+
+// 그 달의 시도 평균 비교가 쓰는 기록(단가와 양이 있는 주유)의 지문. 바뀌지 않았으면 비교를 다시 받지 않는다.
+export const monthFingerprint = (entries: LedgerEntry[], month: string) =>
+  entries
+    .filter((entry) => entry.date.startsWith(month) && entry.pricePerLiter !== null && entry.liters !== null)
+    .map((entry) => `${entry.date}:${entry.liters}:${entry.pricePerLiter}`)
+    .join(",");

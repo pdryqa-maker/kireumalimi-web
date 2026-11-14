@@ -2,7 +2,7 @@
 
 // 대시보드 안 결과 패널. 넓은 화면(lg 이상)은 오른쪽에 붙은 열, 휴대폰은 아래에서 올라오는 창(시트)이다.
 // 안의 대화(ChatPanel)는 하나만 두고 화면 너비에 따라 겉모양만 바꾼다. 그래서 시트를 닫았다 열어도 대화가 남는다.
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const DESKTOP = "(min-width: 64rem)";
 
@@ -19,6 +19,22 @@ export function useIsDesktop() {
     () => window.matchMedia(DESKTOP).matches,
     () => false,
   );
+}
+
+// 패널 상태: 열림, 대화가 답을 준비하는 중인지(busy), 대화가 있는지. ChatPanel의 onActivity에 그대로 넘긴다.
+export function usePanelState() {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [hasResult, setHasResult] = useState(false);
+  const onActivity = useCallback((state: { busy: boolean; hasMessages: boolean }) => {
+    setBusy(state.busy);
+    setHasResult(state.hasMessages);
+    // 사진이나 입력창 질문으로 답을 준비하기 시작하면 패널을 연다.
+    if (state.busy) setOpen(true);
+  }, []);
+  const openPanel = useCallback(() => setOpen(true), []);
+  const closePanel = useCallback(() => setOpen(false), []);
+  return { open, busy, hasResult, onActivity, openPanel, closePanel };
 }
 
 function CloseIcon() {

@@ -2,13 +2,13 @@
 
 // 탐색 대시보드: 맨 위 조건 줄과 지금 있는 탐색 기능 7개를 상자로 보여 준다. 상자를 누르면 결과 패널에서 그 기능이 실행된다.
 // 열 때는 아무것도 조회하지 않는다(오피넷 하루 한도). 누를 때만 조회한다.
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { amountName, type Amount } from "@/lib/fillAmount";
 import { fuelName } from "@/lib/profile";
 import { ledgerStore, parseLedger } from "@/lib/savedLedger";
 import ChatPanel, { type PanelCommand, type PanelHandle } from "./ChatPanel";
 import { ConditionBar, initialPlace, placeLabel, usablePlace } from "./ConditionBar";
-import { DashboardPanel } from "./DashboardPanel";
+import { DashboardPanel, usePanelState } from "./DashboardPanel";
 import { CarIcon, DropIcon, PinIcon, PumpIcon, ReceiptIcon, RouteIcon, ShieldIcon } from "./icons";
 import { useMounted, useProfile, useStored } from "./useStored";
 
@@ -99,19 +99,10 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
   const standingName = (standingDraft ?? lastStation).trim();
 
   const panelRef = useRef<PanelHandle>(null);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [hasResult, setHasResult] = useState(false);
-  const onActivity = useCallback((state: { busy: boolean; hasMessages: boolean }) => {
-    setBusy(state.busy);
-    setHasResult(state.hasMessages);
-    // 사진이나 입력창 질문으로 답을 준비하기 시작하면 패널을 연다.
-    if (state.busy) setOpen(true);
-  }, []);
-  const closePanel = useCallback(() => setOpen(false), []);
+  const { open, busy, hasResult, onActivity, openPanel, closePanel } = usePanelState();
 
   const runBox = (command: PanelCommand) => {
-    setOpen(true);
+    openPanel();
     panelRef.current?.run(command);
   };
 
@@ -228,7 +219,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
           ))}
         </ul>
       </div>
-      <DashboardPanel open={open} onOpen={() => setOpen(true)} onClose={closePanel} label="탐색 결과" hasResult={hasResult}>
+      <DashboardPanel open={open} onOpen={openPanel} onClose={closePanel} label="탐색 결과" hasResult={hasResult}>
         <ChatPanel
           ref={panelRef}
           variant="panel"

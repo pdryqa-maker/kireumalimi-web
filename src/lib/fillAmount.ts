@@ -27,9 +27,12 @@ export function cleanAmount(value: unknown): Amount | null {
 }
 
 // 50000 → "5만원", 45000 → "4만 5천원", 8000 → "8천원"
+// 천원 자리에서 반올림한 말(139,880 → "14만원"). 천원이 안 되면 그대로 쓴다.
 export function wonName(won: number) {
-  const man = Math.floor(won / 10000);
-  const chun = Math.round((won % 10000) / 1000);
+  const thousands = Math.round(won / 1000);
+  if (thousands === 0) return `${won.toLocaleString("ko-KR")}원`;
+  const man = Math.floor(thousands / 10);
+  const chun = thousands % 10;
   return `${[man ? `${man}만` : "", chun ? `${chun}천` : ""].filter(Boolean).join(" ")}원`;
 }
 
