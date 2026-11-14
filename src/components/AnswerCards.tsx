@@ -146,10 +146,7 @@ export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null
         </dl>
       )}
       <figure className="mt-4">
-        <figcaption className="text-xs text-ink-soft">
-          카카오톡 채널이 열리면 종료 7일 전에 이렇게 보내요. 지금은 미리보기예요.
-        </figcaption>
-        <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
+        <blockquote className="rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
           {message}
         </blockquote>
       </figure>
@@ -227,10 +224,7 @@ export function CapCard({
         </button>
       </div>
       <figure className="mt-4">
-        <figcaption className="text-xs text-ink-soft">
-          카카오톡 채널이 열리면 발표 직후 이렇게 보내요. 지금은 미리보기예요.
-        </figcaption>
-        <blockquote className="mt-2 rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
+        <blockquote className="rounded-2xl rounded-tl-md p-4 text-[15px] leading-relaxed shadow-raised-sm">
           {capMessage(cap)}
         </blockquote>
       </figure>
@@ -291,8 +285,7 @@ export function AlertCard({
         <p className={`mt-4 w-fit ${TAG}`}>{STATUS_TEXT[status]}</p>
       )}
       <p className="mt-3 text-xs text-ink-soft">
-        조건은 이 브라우저에만 저장하고, 확인할 때 오피넷 최저가와 맞춰 봐요. 카카오톡 채널이 열리면 조건에 닿을 때
-        알려요.
+        조건은 이 브라우저에만 저장하고, 확인할 때 오피넷 최저가와 맞춰 봐요.
       </p>
     </div>
   );

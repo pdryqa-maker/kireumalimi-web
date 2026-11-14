@@ -30,7 +30,6 @@ type Region = { key: string; area: string; name: string };
 type VsArea = { fingerprint: string; area: string; savedWon: number; comparedFills: number };
 
 const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
-const DASHBOARD_QUESTION = "계기판 사진으로 내 연비 맞춰 줘";
 const CHART_MONTHS = 12;
 
 // 그 달 시도 평균 비교 결과. 다 견준 지난 달만 기록 지문과 함께 남겨, 지문이 같으면 다시 부르지 않는다(vsAreaFinal).
@@ -178,17 +177,12 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
     if (command.kind !== "photo") openPanel();
     panelRef.current?.run(command);
   };
+  // 계기판 찍기는 내 정보(연비)에 있다. 채팅 입력창의 사진 버튼으로도 계기판을 읽을 수 있다.
   const photoButtons = (
-    <div className="flex gap-2">
-      <button type="button" disabled={busy} onClick={() => run({ kind: "photo", question: RECEIPT_QUESTION })} className={`${BUTTON} flex items-center gap-1.5`}>
-        <CameraIcon className="size-4" />
-        영수증 찍기
-      </button>
-      <button type="button" disabled={busy} onClick={() => run({ kind: "photo", question: DASHBOARD_QUESTION })} className={`${BUTTON} flex items-center gap-1.5`}>
-        <CameraIcon className="size-4" />
-        계기판 찍기
-      </button>
-    </div>
+    <button type="button" disabled={busy} onClick={() => run({ kind: "photo", question: RECEIPT_QUESTION })} className={`${BUTTON} flex items-center gap-1.5 self-start sm:self-auto`}>
+      <CameraIcon className="size-4" />
+      영수증 찍기
+    </button>
   );
 
   const label = month ? monthName(month) : "";
