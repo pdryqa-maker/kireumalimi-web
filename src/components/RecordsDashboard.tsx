@@ -3,7 +3,6 @@
 // 내 기록 대시보드: 고른 달의 숫자 카드, 월별 쓴 돈 그래프, 다음 주유일, 주유 기록 표. 결과와 사진 읽기는 대시보드 안 패널에서 한다.
 // 숫자는 이 브라우저의 장부로 셈한다. 오피넷은 "시도 평균보다" 한 줄만 그 달을 처음 볼 때 한 번 부르고 결과를 브라우저에 남긴다.
 import { useEffect, useRef, useState } from "react";
-import { browserStore } from "@/lib/browserStore";
 import { forecastNextFill, todayKst, type FillForecast } from "@/lib/fillForecast";
 import {
   dotUnit,
@@ -13,12 +12,14 @@ import {
   paidWon,
   totals,
   vsAreaFinal,
+  vsAreaKey,
   type MonthSpend,
 } from "@/lib/fillTotals";
 import { fuelEconomy, type KmplSource } from "@/lib/fuelEconomy";
 import { MAX_SAVED_LEDGER, type LedgerEntry } from "@/lib/ledger";
 import { fillStore, parseFills } from "@/lib/savedFills";
 import { ledgerForMonth, ledgerStore, mergeLedger, parseLedger } from "@/lib/savedLedger";
+import { parseVsArea, vsAreaStore, type VsArea } from "@/lib/savedVsArea";
 import ChatPanel, { type PanelCommand, type PanelHandle } from "./ChatPanel";
 import { DashboardPanel, usePanelState } from "./DashboardPanel";
 import { dayWithWeekday, won } from "./format";
@@ -27,21 +28,10 @@ import { monthName, MonthlyChart, PHONE_MONTHS, spendText } from "./MonthlyChart
 import { useMounted, useProfile, useStored } from "./useStored";
 
 type Region = { key: string; area: string; name: string };
-type VsArea = { fingerprint: string; area: string; savedWon: number; comparedFills: number };
 
 const RECEIPT_QUESTION = "영수증 사진으로 주유 기록 남겨 줘";
 const CHART_MONTHS = 12;
 
-// 그 달 시도 평균 비교 결과. 다 견준 지난 달만 기록 지문과 함께 남겨, 지문이 같으면 다시 부르지 않는다(vsAreaFinal).
-const vsAreaStore = browserStore("kireumalimi.vsArea", "{}");
-const parseVsArea = (raw: string): Record<string, VsArea> => {
-  try {
-    const value = JSON.parse(raw);
-    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  } catch {
-    return {};
-  }
-};
 
 const SOURCE: Record<KmplSource, string> = {
   measured: "가득→가득 실측",
@@ -125,7 +115,7 @@ export default function RecordsDashboard({ fixedQuestion, region }: { fixedQuest
 
   // "시도 평균보다" 한 줄: 그 달 단가 있는 기록이 있을 때만, 처음 볼 때 한 번 받는다.
   const priced = month ? monthFingerprint(entries, month) : "";
-  const fingerprint = priced ? `${profile.fuel}|${profile.area?.code ?? ""}|${priced}` : "";
+  const fingerprint = vsAreaKey(profile.fuel, profile.area?.code ?? "", entries, month);
   // 오래 남기지 않는 결과(이번 달, 일부만 견줌, 오피넷 장애)는 이 화면에서만 들고 있어 다시 그릴 때 또 부르지 않는다.
   const [shown, setShown] = useState<Record<string, VsArea>>({});
   const cached = !fingerprint ? null : vsArea[month]?.fingerprint === fingerprint ? vsArea[month] : (shown[fingerprint] ?? null);

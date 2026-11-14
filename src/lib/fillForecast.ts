@@ -37,6 +37,13 @@ export const addDays = (date: string, days: number) => fromDay(toDay(date)! + da
 export const daysBetween = (from: string, to: string) => toDay(to)! - toDay(from)!;
 export const weekday = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
 
+// 예보를 알리는 날: 예상일이 든 주의 월요일 아침. 그 월요일이 이미 지났으면 오늘.
+export function notifyDay(nextDate: string, today: string) {
+  const nextDay = toDay(nextDate)!;
+  const mondayOfWeek = nextDay - ((new Date(nextDay * DAY).getUTCDay() + 6) % 7);
+  return fromDay(Math.max(mondayOfWeek, toDay(today)!));
+}
+
 // 기록을 확인한다. 문제가 있으면 이용자에게 보여 줄 문장을 던진다.
 export function cleanRecords(records: FillRecord[], today = todayKst()) {
   if (records.length < MIN_RECORDS || records.length > MAX_RECORDS) {
@@ -87,9 +94,7 @@ export function forecastNextFill(records: FillRecord[], today = todayKst()) {
   const typicalLiters = liters.length > 0 ? Math.round(liters.reduce((a, b) => a + b, 0) / liters.length) : null;
   const nextDay = last.day + avgGapDays;
   const todayDay = toDay(today)!;
-  // 예상일이 든 주의 월요일 아침에 한 번 알린다. 그 월요일이 이미 지났으면 오늘 알린다.
-  const mondayOfWeek = nextDay - ((new Date(nextDay * DAY).getUTCDay() + 6) % 7);
-  const notifyDay = Math.max(mondayOfWeek, todayDay);
+  const notifyOn = notifyDay(fromDay(nextDay), today);
   return {
     records: rows.map(({ date, won, liters }) => ({ date, won, liters })),
     gapsDays: gaps,
@@ -99,8 +104,8 @@ export function forecastNextFill(records: FillRecord[], today = todayKst()) {
     lastDate: last.date,
     nextDate: fromDay(nextDay),
     nextWeekday: weekday(fromDay(nextDay)),
-    notifyOn: fromDay(notifyDay),
-    notifyWeekday: weekday(fromDay(notifyDay)),
+    notifyOn,
+    notifyWeekday: weekday(notifyOn),
     // 예상일이 오늘이거나 이미 지났으면 지금 넣을 때다.
     due: nextDay <= todayDay,
     today,
