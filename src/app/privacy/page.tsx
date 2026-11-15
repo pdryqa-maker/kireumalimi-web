@@ -77,6 +77,12 @@ const SENDS = [
     why: "주유소 가격과 고속도로 휴게소 가격 조회",
     link: null,
   },
+  {
+    to: "카카오(카카오맵)",
+    what: "지도 탭에서 길찾기를 누를 때만: 출발 위치 이름과 좌표(내 위치면 100m 단위로 줄인 좌표), 고른 주유소 이름과 좌표. 이 값을 카카오맵 주소에 담아 새 창으로 열어요.",
+    why: "출발지가 채워진 카카오맵 길찾기 열기",
+    link: { href: "https://www.kakao.com/policy/privacy", label: "카카오 개인정보 처리방침" },
+  },
 ];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

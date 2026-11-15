@@ -6,6 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeoJSONSource, Map as MapLibreMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { amountQuery, type Amount } from "@/lib/fillAmount";
+import { kakaoDirections } from "@/lib/directions";
 import { prefsQuery } from "@/lib/discounts";
 import { DEFAULT_PLACE, initialPlace, MY, NO_PLACE, usablePlace } from "@/lib/places";
 import { fuelName, prefsOf } from "@/lib/profile";
@@ -526,7 +527,7 @@ export default function StationMap() {
                 </button>
               )}
               <a
-                href={`https://map.kakao.com/link/to/${encodeURIComponent(selected.name)},${selected.lat},${selected.lon}`}
+                href={kakaoDirections(selected, { name: data.place, ...data.origin })}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ml-auto rounded-full bg-accent px-4 py-2 text-sm font-semibold text-on-accent"
