@@ -253,11 +253,15 @@ export async function findStationByName(name: string, area: string | null) {
 
 const isAlttle = (brand: string) => brand.includes("알뜰");
 
+// 오피넷 주유소 ID(UNI_ID, 예: A0031658). 형식이 다르면 호출하지 않아 하루 한도를 아낀다(AI가 넘긴 ID도 같다).
+const STATION_ID = /^[A-Z0-9]{6,12}$/;
+
 // 이 주유소가 동네에서 싼 편인지: 시군구 평균과의 차이, 반경 5km 안에서 몇 번째로 싼지.
 // 단골 점검과 '알뜰이 정말 싼지' 확인에 쓴다. 반경은 이 주유소에서 잰 직선 5km다.
 export async function stationStanding(id: string, fuel: string, prefs: Prefs = NO_PREFS) {
   const prodcd = FUEL_CODES[fuel];
   if (!prodcd) throw new RangeError("지원하지 않는 유종입니다.");
+  if (!STATION_ID.test(id)) return { error: "주유소를 찾지 못했습니다." };
   const [row] = rows(await fetchOpinet("detailById", { id }));
   if (!row) return { error: "주유소를 찾지 못했습니다." };
   const priceRow = ((row.OIL_PRICE as unknown as Row[] | undefined) ?? []).find((item) => String(item.PRODCD) === prodcd);
@@ -363,6 +367,7 @@ export async function findCheapest(fuel: string, area: string, count = 5, prefs:
 }
 
 export async function getStation(id: string) {
+  if (!STATION_ID.test(id)) return null;
   const [row] = rows(await fetchOpinet("detailById", { id }));
   if (!row) {
     return null;

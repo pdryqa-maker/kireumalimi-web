@@ -36,7 +36,7 @@ type MapStation = {
 type MapData = {
   place: string;
   origin: { lat: number; lon: number };
-  fill: { label: string };
+  fill: { label: string; liters: number; won: number | null };
   kmpl: number;
   fetchedAtKst: string;
   distanceNote: string;
@@ -502,7 +502,8 @@ export default function StationMap() {
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-hairline pt-3 text-sm">
               <div>
-                <dt className="text-xs text-ink-soft">{data.fill.label} 넣으면</dt>
+                {/* 금액으로 고르면 '5만원어치 넣으면 48,465원'처럼 어긋나 보이므로 리터로 적는다. */}
+                <dt className="text-xs text-ink-soft">{data.fill.won ? `약 ${data.fill.liters}L` : data.fill.label} 넣으면</dt>
                 <dd className="font-semibold tabular-nums">{won(selected.fillWon)}원</dd>
               </div>
               <div>

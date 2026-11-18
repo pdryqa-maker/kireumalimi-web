@@ -7,7 +7,9 @@ const UNIT: Record<string, number> = { 만: 10000, 천: 1000 };
 // 줄 앞의 "1. ", "2) " 같은 목록 번호는 숫자로 세지 않는다.
 const LIST_MARKER = /^\s*\d{1,2}[.)]\s/gm;
 // 순서·개수에 흔히 쓰는 0~10은 근거 없이도 허용한다. 대신 '확인한 숫자' 개수에는 넣지 않는다.
+// 다만 금액·비율·거리·양 단위가 붙으면("7원 올랐어요", "3% 내렸어요") 근거가 있어야 한다.
 const SMALL = new Set(Array.from({ length: 11 }, (_, index) => String(index)));
+const MEASURED_SMALL = /(?<![\d.,])(\d{1,2})(?![\d.,])\s*(?:원|%|퍼센트|km|킬로|ℓ|L|리터)/g;
 
 function normalize(raw: string) {
   const unit = UNIT[raw.at(-1) ?? ""] ?? 1;
@@ -22,7 +24,7 @@ export function numbersIn(text: string) {
 }
 
 // 도구 결과 같은 값에서 근거가 되는 숫자를 모은다. 배열 길이(몇 곳인지)도 근거로 친다.
-export function collectAllowed(values: unknown[], into = new Set<string>(SMALL)) {
+export function collectAllowed(values: unknown[], into = new Set<string>()) {
   const visit = (value: unknown) => {
     if (Array.isArray(value)) {
       into.add(String(value.length));
@@ -39,8 +41,11 @@ export function collectAllowed(values: unknown[], into = new Set<string>(SMALL))
 
 export function checkNumbers(answer: string, allowed: Set<string>) {
   const found = [...new Set(numbersIn(answer))];
+  const plain = answer.replace(LIST_MARKER, "");
+  const measured = new Set([...plain.matchAll(MEASURED_SMALL)].map((match) => normalize(match[1])));
+  const free = (number: string) => SMALL.has(number) && !measured.has(number);
   return {
-    unknown: found.filter((number) => !allowed.has(number)),
+    unknown: found.filter((number) => !allowed.has(number) && !free(number)),
     verified: found.filter((number) => allowed.has(number) && !SMALL.has(number)).length,
   };
 }

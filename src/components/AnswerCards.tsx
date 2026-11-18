@@ -4,8 +4,10 @@
 import { useState } from "react";
 import type { AlertProposal, DashboardProposal, FillProposal } from "@/lib/chatbot";
 import type { Fill } from "@/lib/fillAmount";
+import { josa } from "@/lib/conditions";
 import { MAX_ODOMETER_KM } from "@/lib/ledger";
 import type { priceCapNotice, taxCutImpact } from "@/lib/policy";
+import { fuelName } from "@/lib/profile";
 import type { findByTotalCost, findCommute } from "@/lib/stations";
 import { koreanTime, longDate, monthDay, PUMP_NOTE, won } from "./format";
 import { discountLine, excludedNote } from "./stationText";
@@ -71,7 +73,7 @@ export function CostCard({
   return (
     <div className={`${map ? "w-full " : ""}${CARD}`}>
       {map}
-      <CardHead title={`${cost.place} 출발 · ${cost.fuel} ${cost.fill.label} 실질비용`} fetchedAt={cost.fetchedAt} />
+      <CardHead title={`${cost.place} 출발 · ${fuelLabel(cost.fuel)} ${cost.fill.label} 실질비용`} fetchedAt={cost.fetchedAt} />
       <p className="mt-1 text-xs text-ink-soft">
         기름값에 오가는 연료비(연비 {cost.kmpl}km/L, 직선 왕복)를 더한 총비용 순 · 반경 {cost.radiusKm}km
       </p>
@@ -108,7 +110,7 @@ export function CostCard({
       </ol>
       <p className="mt-3 text-[15px] leading-relaxed">
         {cheapest && cost.extraForCheapestWon > 0
-          ? `가장 싼 ${cheapest.name}(리터당 ${won(cheapest.paidPrice)}원)은 ${cheapest.distanceKm}km 떨어져 있어, 거리까지 따지면 ${won(cost.extraForCheapestWon)}원 더 들어요.`
+          ? `가장 싼 ${cheapest.name}(리터당 ${won(cheapest.paidPrice)}원)${josa(cheapest.name, "은", "는")} ${cheapest.distanceKm}km 떨어져 있어, 거리까지 따지면 ${won(cost.extraForCheapestWon)}원 더 들어요.`
           : "가장 싼 곳이 거리까지 따져도 가장 덜 들어요."}
       </p>
       {excludedNote(cost.excludedCount, false) && <p className="mt-2 text-sm">{excludedNote(cost.excludedCount, false)}</p>}
@@ -150,7 +152,7 @@ export function CommuteCard({ commute }: { commute: CommuteResult }) {
   const empty = overlap.length === 0 && !nearHome && !nearWork;
   return (
     <div className={CARD}>
-      <CardHead title={`출퇴근 길 · 집 ${commute.home} ↔ 회사 ${commute.work} · ${commute.fuel}`} fetchedAt={commute.fetchedAt} />
+      <CardHead title={`출퇴근 길 · 집 ${commute.home} ↔ 회사 ${commute.work} · ${fuelLabel(commute.fuel)}`} fetchedAt={commute.fetchedAt} />
       <p className="mt-1 text-xs text-ink-soft">
         {overlap.length > 0
           ? `집과 회사에서 모두 반경 ${radiusKm}km 안인 곳, 두 거리의 합이 짧은 순`
@@ -179,8 +181,8 @@ export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null
   const best = cost?.stations[0];
   const extra =
     tax.fill && tax.maxExtraWon !== null
-      ? `${tax.fuel} ${tax.fill.label}를 넣는 데 최대 ${won(tax.maxExtraWon)}원 더 들어요.`
-      : `${tax.fuel}는 리터당 최대 ${won(tax.wonPerLiter)}원 더 들어요.`;
+      ? `${fuelLabel(tax.fuel)} ${tax.fill.label}를 넣는 데 최대 ${won(tax.maxExtraWon)}원 더 들어요.`
+      : `${fuelLabel(tax.fuel)}는 리터당 최대 ${won(tax.wonPerLiter)}원 더 들어요.`;
   const message =
     `유류세 인하가 ${monthDay(tax.endsOn)}에 끝날 예정이에요. ${extra}` +
     (best && cost ? ` ${cost.place} 근처 추천: ${best.name}, 리터당 ${won(best.price)}원(거리까지 따져 가장 덜 들어요).` : "");
@@ -188,7 +190,7 @@ export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null
     <div className={CARD}>
       <CardHead title="제도 변경 알림 미리보기 · 유류세 인하" />
       <p className="mt-4 text-sm text-ink-soft">
-        {longDate(tax.endsOn)} 인하가 끝나면 {tax.fuel} {tax.fill && tax.maxExtraWon !== null ? `${tax.fill.label}에` : "리터당"}
+        {longDate(tax.endsOn)} 인하가 끝나면 {fuelLabel(tax.fuel)} {tax.fill && tax.maxExtraWon !== null ? `${tax.fill.label}에` : "리터당"}
       </p>
       <p className="mt-1 text-3xl font-bold tabular-nums">
         최대 {won(tax.fill && tax.maxExtraWon !== null ? tax.maxExtraWon : tax.wonPerLiter)}
@@ -222,7 +224,8 @@ export function TaxCard({ tax, cost }: { tax: TaxImpact; cost: CostResult | null
 }
 
 // 화면에는 실내등유를 등유로 줄여 쓴다.
-export const fuelLabel = (fuel: string) => (fuel === "실내등유" ? "등유" : fuel);
+// 화면에 쓰는 유종 이름: 오피넷 이름 '자동차부탄'은 LPG로, '실내등유'는 등유로.
+export const fuelLabel = (fuel: string) => (fuel === "실내등유" ? "등유" : fuelName(fuel));
 
 function changeText(changeWon: number | null, previousRound: number | null) {
   if (changeWon === null || previousRound === null) return "직전 차수 없음";
@@ -234,7 +237,7 @@ export function capMessage(cap: CapNotice) {
   const rows = cap.fuels
     .map((item) => `${fuelLabel(item.fuel)} ${won(item.capWon)}원(${changeText(item.changeWon, cap.previousRound)})`)
     .join(", ");
-  return `${cap.round}차 석유 최고가격이 ${monthDay(cap.startsOn)}부터 적용돼요. ${rows}. 정유사 공급가의 상한이라, 주유소 판매가는 따로 정해져요.`;
+  return `${cap.round}차 석유 최고가격이 ${monthDay(cap.startsOn)}부터 ${monthDay(cap.endsOn)}까지 적용돼요. ${rows}. 정유사 공급가의 상한이라, 주유소 판매가는 따로 정해져요.`;
 }
 
 export function CapCard({
@@ -251,7 +254,7 @@ export function CapCard({
     <div className={CARD}>
       <CardHead title={`제도 변경 해설 · ${cap.round}차 석유 최고가격`} />
       <p className="mt-3 text-sm text-ink-soft">
-        {monthDay(cap.announcedOn)} 발표 · {monthDay(cap.startsOn)}부터 적용
+        {monthDay(cap.announcedOn)} 발표 · {monthDay(cap.startsOn)}~{monthDay(cap.endsOn)} 적용
       </p>
       <dl className="mt-3 grid grid-cols-3 gap-3">
         {cap.fuels.map((item) => (

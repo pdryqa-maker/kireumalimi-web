@@ -17,6 +17,7 @@ export const FUEL_TAX_CUT = {
 
 // 석유 최고가격 고시. 정해진 종료일이 없어 미리 알리지 않고, 발표 직후 해설로 보여 준다.
 // 새 차수가 발표되면 rounds 끝에 추가한다. 가장 마지막 차수와 그 앞 차수를 비교한다.
+// endsOn(적용 마지막 날)이 지나도 새 차수가 없으면 화면은 '적용 기간 끝'으로 바꿔 보여 준다.
 export const PRICE_CAP = {
   name: "석유 최고가격",
   meaning: "정유사가 주유소와 판매소에 넘기는 공급가의 상한입니다. 주유소 판매가의 상한은 아닙니다.",
@@ -28,6 +29,7 @@ export const PRICE_CAP = {
       round: 11,
       announcedOn: "2026-10-16",
       startsOn: "2026-10-17",
+      endsOn: "2026-11-13",
       prices: { 휘발유: 1784, 경유: 1773, 실내등유: 1380 } as Record<string, number>,
       source: "산업통상부 11차 석유 최고가격 고시",
     },
@@ -35,6 +37,7 @@ export const PRICE_CAP = {
       round: 12,
       announcedOn: "2026-11-13",
       startsOn: "2026-11-14",
+      endsOn: "2026-12-11", // 11월 14일부터 4주
       // 11차와 같은 값으로 동결(8차부터 다섯 번째 연속 동결). 적용 기간은 11월 14일 0시부터 4주.
       prices: { 휘발유: 1784, 경유: 1773, 실내등유: 1380 } as Record<string, number>,
       source: "산업통상부 12차 석유 최고가격 고시",
@@ -71,6 +74,7 @@ export function priceCapNotice(fuel: string, liters: number | null) {
     round: current.round,
     announcedOn: current.announcedOn,
     startsOn: current.startsOn,
+    endsOn: current.endsOn,
     previousRound: previous?.round ?? null,
     fuel,
     liters,

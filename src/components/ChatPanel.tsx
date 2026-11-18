@@ -15,7 +15,7 @@ import { priceCapNotice } from "@/lib/policy";
 import { fuelName, GUEST, prefsOf, saveProfile, signedIn, type Profile } from "@/lib/profile";
 import { addAlert, alertStore, parseAlerts } from "@/lib/savedAlerts";
 import { fillStore, parseFills, saveFills } from "@/lib/savedFills";
-import { addLedgerEntry, ledgerForMonth, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger } from "@/lib/savedLedger";
+import { addLedgerEntry, ledgerForMonth, ledgerForServer, ledgerStore, markFill, mergeLedger, parseLedger, sameReceipt } from "@/lib/savedLedger";
 import { parseWatch, watchStore } from "@/lib/watchSettings";
 import {
   AlertCard,
@@ -53,6 +53,9 @@ import { shrinkPhoto, type Photo } from "./photo";
 import { useMounted, useProfile, useStored } from "./useStored";
 
 const ERROR_TEXT = "답변을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+// '지난 고시 뒤 우리 동네는?' 기록이 있는 지역(오피넷 시군구 코드 → fixed_question.json 지역)과 유종
+const FIXED_REGIONS: Record<string, string> = { "0109": "seoul_mapo", "0121": "seoul_seocho", "1831": "ulsan_ulju" };
+const FIXED_FUELS = ["휘발유", "경유"];
 const ALERT_EXAMPLE = "경유 1,750원 밑으로 내려가면 알려 줘";
 const CAP_QUESTION = "최고가격 고시, 쉽게 설명해 줘";
 const FORECAST_QUESTION = "내 기록으로 다음 주유일 알려 줘";
@@ -101,7 +104,7 @@ type SkeletonKind = "list" | "detail" | "text";
 // 카드 답변에는 summary를 붙인다. 자유 질문을 보낼 때 대화 기록에 이 요약이 들어가, AI가 이미 답한 질문을 다시 답하지 않는다.
 type Reply =
   | { from: "bot"; text: string; check?: Check; map?: MiniMapData }
-  | { from: "bot"; summary: string; notice: { text: string; figures: NoticeFigures } }
+  | { from: "bot"; summary: string; notice: { text: string; figures: NoticeFigures; example?: string | null } }
   | { from: "bot"; summary: string; title: string; fetchedAt: string; stations: Station[]; excludedCount?: number; map?: MiniMapData }
   | { from: "bot"; summary: string; detail: StationDetail; map?: MiniMapData }
   | { from: "bot"; summary: string; cost: CostResult; map?: MiniMapData }
@@ -618,11 +621,21 @@ export default function ChatPanel({
 
   const askFixed = () => {
     const chosen = fuel;
+    // 지난 고시 기록은 세 지역·두 유종만 모아 두었다. 내 지역 기록이 없으면 울주군을 '예시'로 밝혀 보여 준다.
+    const own = homeArea ? FIXED_REGIONS[homeArea.code] : undefined;
     ask(fixedQuestion, "text", async () => {
-      const { ok, body } = await getJson(`/api/fixed-question?${new URLSearchParams({ region: region.key, fuel: chosen })}`);
-      return ok && body?.figures
-        ? { from: "bot", notice: { text: body.text, figures: body.figures }, summary: body.text }
-        : null;
+      if (!FIXED_FUELS.includes(chosen)) {
+        return {
+          from: "bot",
+          text: `${fuelName(chosen)}는 지난 고시 기록이 없어요. 석유 최고가격 고시는 휘발유·경유·실내등유가 대상이라, 휘발유나 경유를 고르면 볼 수 있어요.`,
+        };
+      }
+      const { ok, body } = await getJson(`/api/fixed-question?${new URLSearchParams({ region: own ?? region.key, fuel: chosen })}`);
+      if (!ok || !body?.figures) return null;
+      const example = own
+        ? null
+        : `${homeArea ? `${homeArea.name}은 기록이 없어 ` : ""}울산 울주군 예시로 보여 드려요. 기록은 서울 마포구·서초구, 울산 울주군만 모아 두었어요.`;
+      return { from: "bot", notice: { text: body.text, figures: body.figures, example }, summary: body.text };
     });
   };
 
@@ -632,7 +645,9 @@ export default function ChatPanel({
       // 금액을 리터로 바꿀 평균가를 못 받으면 리터당 값만 보여 준다.
       const fill = await fetchFill(chosenFuel, chosenAmount, fullTank);
       const result = priceCapNotice(chosenFuel, fill?.liters ?? null);
-      if (typeof result.error === "string") return { from: "bot", text: result.error };
+      if (typeof result.error === "string") {
+        return { from: "bot", text: `${fuelName(chosenFuel)}는 석유 최고가격 대상이 아니에요. 최고가격은 휘발유, 경유, 실내등유에만 정해져요.` };
+      }
       const cap = { ...result, fill } as CapNotice;
       return { from: "bot", cap, summary: capSummary(cap) };
     });
@@ -808,18 +823,27 @@ export default function ChatPanel({
 
   // 영수증 기록을 주유 기록에 더한다. 같은 날 기록은 바꾸고, 최근 5번만 남긴다. 두 번 이상이면 다음 주유일을 바로 셈한다.
   function saveFill(id: number, fill: FillProposal, mark: FillMark) {
-    const records = [...parseFills(fillStore.read()).filter((record) => record.date !== fill.date), { date: fill.date, liters: fill.liters }]
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(-MAX_RECORDS);
-    // 장부에는 단가·금액·주유소 이름까지 남겨 월간 리포트와 주유소 점검에 쓴다.
-    addLedgerEntry({
+    const entry = {
       date: fill.date,
       liters: fill.litersOnReceipt,
       pricePerLiter: fill.pricePerLiter,
       totalWon: fill.totalWon,
       stationName: fill.stationName,
       ...mark,
-    });
+    };
+    // 같은 날 다른 영수증이 이미 있으면 덮어쓰지 않고 합친다(장부와 예보 기록 모두 하루 한 줄).
+    const sameDay = parseLedger(ledgerStore.read()).find((item) => item.date === fill.date);
+    const merged = Boolean(sameDay && !sameReceipt(sameDay, entry));
+    const earlier = parseFills(fillStore.read()).find((record) => record.date === fill.date);
+    const liters = merged && earlier?.liters ? earlier.liters + fill.liters : fill.liters;
+    const records = [...parseFills(fillStore.read()).filter((record) => record.date !== fill.date), { date: fill.date, liters }]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-MAX_RECORDS);
+    // 장부에는 단가·금액·주유소 이름까지 남겨 월간 리포트와 주유소 점검에 쓴다.
+    addLedgerEntry(entry);
+    if (merged) {
+      setMessages((current) => [...current, { from: "bot", text: `${monthDay(fill.date)}에 넣은 기록이 이미 있어 두 영수증을 합쳤어요.` }]);
+    }
     const stored = saveFills(records);
     setFillStatus(id, stored ? "saved" : "unsaved");
     if (!stored) return;
@@ -1167,7 +1191,7 @@ export default function ChatPanel({
             );
           }
           if ("notice" in message) {
-            const { figures, text } = message.notice;
+            const { figures, text, example } = message.notice;
             const cut = figures.changeWon < 0;
             return (
               <div key={index} className="max-w-[34rem] animate-rise rounded-3xl bg-ground p-5 shadow-raised">
@@ -1197,6 +1221,7 @@ export default function ChatPanel({
                   ))}
                 </dl>
                 <p className="mt-4 text-[15px] leading-relaxed">{text}</p>
+                {example && <p className="mt-2 text-xs text-ink-soft">{example}</p>}
               </div>
             );
           }
@@ -1256,7 +1281,7 @@ export default function ChatPanel({
               )}
               {message.check && message.check.verified > 0 && (
                 <p className="mt-2.5 w-fit rounded-full px-2.5 py-1 text-xs font-medium text-ink-soft tabular-nums shadow-inset-sm">
-                  숫자 {message.check.verified}개 · 조회 결과와 대조해 일치
+                  숫자 {message.check.verified}개 · 조회 결과·앞선 대화와 대조해 일치
                 </p>
               )}
             </div>

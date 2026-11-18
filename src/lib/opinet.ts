@@ -1,10 +1,45 @@
 // 오피넷 API 호출. 인증키는 서버 환경변수에서만 읽는다.
-import { LIMITS, take } from "@/lib/rateLimit";
+import { restRedis } from "@/lib/account/redis";
+import { DAY, LIMITS, take } from "@/lib/rateLimit";
 
 const CACHE_MS = 10 * 60 * 1000; // 일반 키 한도(하루 300회)를 아끼기 위해 같은 요청은 10분간 재사용
 
 // Next의 fetch 캐시는 요청 주소를 파일에 남겨 인증키가 디스크에 저장되므로 메모리에만 보관한다.
+// 재사용 시간이 지나도 하루 동안은 지우지 않고, 한도에 닿거나 오피넷 호출이 실패하면 그 값을 처음 받은 시각과 함께 돌려준다.
 const cache = new Map<string, { expires: number; body: unknown; fetchedAt: string }>();
+
+function stale(cacheKey: string) {
+  const cached = cache.get(cacheKey);
+  return cached && Date.now() - Date.parse(cached.fetchedAt) < DAY ? { body: cached.body, fetchedAt: cached.fetchedAt } : null;
+}
+
+function prune() {
+  if (cache.size <= 2000) return;
+  for (const [key, item] of cache) if (Date.now() - Date.parse(item.fetchedAt) >= DAY) cache.delete(key);
+}
+
+// 하루 호출 수는 Vercel 서버가 여러 개 떠도, 새로 떠도 같이 세도록 계정 저장소(Upstash Redis)에 한국 날짜별로 센다.
+// 저장소가 없거나(개발) 연결이 안 되면 이 서버 메모리로 센다.
+const store = (() => {
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  return url && token ? restRedis(url, token) : null;
+})();
+
+async function takeDailyCall() {
+  if (store) {
+    const kstDate = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const key = `opinet:calls:${kstDate}`;
+    try {
+      const count = await store.incr(key);
+      if (count === 1) await store.expire(key, 2 * 24 * 60 * 60);
+      return count <= LIMITS.opinetDaily.max;
+    } catch {
+      // 저장소가 잠시 안 되면 메모리로 센다(서버마다 따로 세므로 덜 정확하다).
+    }
+  }
+  return take("opinetDaily", "all", LIMITS.opinetDaily);
+}
 
 export class OpinetError extends Error {}
 
@@ -50,7 +85,9 @@ export async function fetchOpinetTimed(
   }
 
   // 캐시에 없을 때만 실제 호출이므로 여기서 하루 호출 수를 센다.
-  if (!take("opinetDaily", "all", LIMITS.opinetDaily)) {
+  if (!(await takeDailyCall())) {
+    const old = stale(cacheKey);
+    if (old) return old;
     throw new OpinetError("오늘 오피넷 조회 한도에 가까워 잠시 멈췄어요. 내일 다시 시도해 주세요.");
   }
 
@@ -70,9 +107,12 @@ export async function fetchOpinetTimed(
   } catch {
     // 원래 오류에는 인증키가 든 주소가 포함될 수 있어 버리고, 서버 기록에는 어느 API가 어느 단계에서 실패했는지만 남긴다.
     console.error(`오피넷 ${endpoint} 실패: ${stage}`);
+    const old = stale(cacheKey);
+    if (old) return old;
     throw new OpinetError("오피넷 호출에 실패했습니다.");
   }
   const fetchedAt = new Date().toISOString();
+  prune();
   cache.set(cacheKey, { expires: Date.now() + cacheMs, body, fetchedAt });
   return { body, fetchedAt };
 }

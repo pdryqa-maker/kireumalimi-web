@@ -16,9 +16,36 @@ export function parseLedger(raw: string) {
   }
 }
 
+// 같은 영수증인지(같은 날, 같은 양·금액·주유소). 같은 사진을 다시 넣거나 가득 표시만 바꿀 때는 덮어쓴다.
+export const sameReceipt = (a: LedgerEntry, b: LedgerEntry) =>
+  a.date === b.date && a.liters === b.liters && a.totalWon === b.totalWon && a.stationName === b.stationName;
+
+// 장부는 하루에 한 줄이다(연비·예보·리포트가 날짜로 묶는다). 같은 날 다른 영수증이 오면 덮어쓰지 않고 양과 금액을 더한다.
+// 한쪽이라도 양이나 금액을 모르면 합계를 모르므로, 둘 다 모르게 되는 경우에만 나중 것을 남긴다.
+export function mergeSameDay(earlier: LedgerEntry, later: LedgerEntry): LedgerEntry {
+  if (sameReceipt(earlier, later)) return later;
+  const add = (a: number | null, b: number | null) => (a !== null && b !== null ? Math.round((a + b) * 100) / 100 : null);
+  const liters = add(earlier.liters, later.liters);
+  const totalWon = add(earlier.totalWon, later.totalWon);
+  if (liters === null && totalWon === null) return later;
+  const names = [earlier.stationName, later.stationName];
+  return {
+    date: later.date,
+    liters,
+    totalWon,
+    pricePerLiter: liters && totalWon ? Math.round(totalWon / liters) : null,
+    // 주유소가 다르면 '○○ 외 1곳'으로 남겨, 한 주유소의 단가로 잘못 비교하지 않게 한다.
+    stationName: names[0] === names[1] ? names[1] : names[1] && names[0] ? `${names[1]} 외 1곳` : (names[1] ?? names[0]),
+    full: later.full || earlier.full,
+    odometerKm: later.odometerKm ?? earlier.odometerKm,
+  };
+}
+
 export function addLedgerEntry(entry: LedgerEntry) {
+  const saved = parseLedger(ledgerStore.read());
+  const sameDay = saved.find((item) => item.date === entry.date);
   return ledgerStore.write(
-    cleanLedger([...parseLedger(ledgerStore.read()).filter((item) => item.date !== entry.date), entry], MAX_SAVED_LEDGER),
+    cleanLedger([...saved.filter((item) => item.date !== entry.date), sameDay ? mergeSameDay(sameDay, entry) : entry], MAX_SAVED_LEDGER),
   );
 }
 

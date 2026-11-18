@@ -242,7 +242,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
   return (
     <div data-wide="" className="grid gap-x-6 pb-6 lg:grid-cols-[minmax(0,1fr)_25rem]">
       <div className="min-w-0 pt-6">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-3">
           <div>
             <h1 className="text-[1.75rem] leading-tight font-bold tracking-tight">주유소 탐색</h1>
             <p className="mt-1 text-ink-soft">조건을 고르고 필요한 기능을 누르세요. 결과는 패널에 떠요.</p>

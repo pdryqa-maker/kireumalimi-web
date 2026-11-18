@@ -130,9 +130,10 @@ export function login(request: Request, deps: Deps) {
     const id = cleanLoginId(body.id);
     if (!id) return fail(401, MESSAGES.wrong); // 이런 아이디로는 가입할 수 없으니 셀 필요도 없다
 
-    // 시도를 먼저 센다. 맞으면 지우므로 결국 틀린 횟수만 남는다. 잠긴 동안의 시도도 10분을 다시 잰다.
+    // 시도를 먼저 센다. 맞으면 지우므로 결국 틀린 횟수만 남는다. 10분은 첫 실패부터 재고, 잠긴 동안의 시도로 늘리지 않는다
+    // (늘리면 남이 10분마다 한 번씩만 틀려도 그 계정을 계속 잠가 둘 수 있다).
     const tries = await ready.redis.incr(failKey(id));
-    if (tries === 1 || tries > LOCK_MAX) await ready.redis.expire(failKey(id), LOCK_SECONDS);
+    if (tries === 1) await ready.redis.expire(failKey(id), LOCK_SECONDS);
     if (tries > LOCK_MAX) return fail(429, MESSAGES.locked);
 
     const stored = await ready.redis.hgetall(accountKey(id));

@@ -1,5 +1,5 @@
 // 공개 주소로 열려 있어 인증키 한도(오피넷 하루 300회)와 Claude 비용을 지키기 위한 호출 제한.
-// 서버 메모리에 세므로 Vercel 인스턴스마다 따로 센다. 정확한 전체 제한이 필요하면 공유 저장소(KV 등)로 옮겨야 한다.
+// 서버 메모리에 세므로 Vercel 인스턴스마다 따로 센다. 오피넷 하루 한도만은 공유 저장소(Upstash)로 센다(src/lib/opinet.ts).
 const windows = new Map<string, number[]>();
 
 export const MINUTE = 60 * 1000;

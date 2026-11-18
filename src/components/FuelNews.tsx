@@ -92,8 +92,19 @@ function policyRows(today: string, fuel: string): Row[] {
     {
       Icon: CalendarIcon,
       label: `${cap.round}차 석유 최고가격`,
-      value: today < cap.startsOn ? `${dayWithWeekday(cap.startsOn)}부터 적용` : `${monthDay(cap.startsOn)}부터 적용 중`,
-      note: capWon ? `${fuelName(fuel)} 공급가 상한 ${won(capWon)}원${capNote(fuel)}` : "휘발유, 경유, 실내등유가 대상이에요",
+      value:
+        today < cap.startsOn
+          ? `${dayWithWeekday(cap.startsOn)}부터 적용`
+          : today > cap.endsOn
+            ? `${monthDay(cap.endsOn)}에 적용 기간 끝`
+            : `${monthDay(cap.endsOn)}까지 적용 중`,
+      // 적용 기간이 지났는데 다음 차수를 아직 적지 않았으면, 지난 값을 지금 값처럼 보이지 않게 한다.
+      note:
+        today > cap.endsOn
+          ? "다음 차수 발표를 확인하면 바꿔 둘게요"
+          : capWon
+            ? `${fuelName(fuel)} 공급가 상한 ${won(capWon)}원${capNote(fuel)}`
+            : "휘발유, 경유, 실내등유가 대상이에요",
     },
     {
       Icon: ReceiptIcon,
