@@ -11,14 +11,14 @@ web
 - **Primary viewer: competition judges.** The site is a working prototype for 한국석유공사 AI·데이터 서포터즈(AI누리즈) Mission 3 「AI 기반 국민 편의 서비스 및 아이디어 제안」. Judges see it in the submitted demo video and at the end-of-November results session. Success is that it reads as a real, trustworthy public-data service, not a class project.
 - **Users the prototype represents** (scenarios shown in the demo, not live users):
   - Ordinary drivers asking where fuel is cheapest and whether a price is current.
-  - Families of elderly kerosene-heating households, kerosene sellers, and local-government welfare staff (등유 안심 screens).
+  - Families of elderly kerosene-heating households, kerosene sellers, and local-government welfare staff (등유 알리미 screens).
   - Elderly kerosene households themselves are reached by AI phone call, with no screen.
 
 ## Product Purpose
 
 기름알리미 turns 한국석유공사 오피넷 data into a service that tells people before they run out and answers when they ask in plain words. It has two parts:
 
-- **등유 안심 (lead part, about 65–70% of the report and demo):** predicts when a household's heating kerosene runs out, an AI calls the elderly resident first and places the order with consent, and flags households that may be going without heat. Built by 김형준·목서환 as a separate app (github.com/mokseo42-oss/deungyu-alimi, https://deungyu-alimi.vercel.app). This site's `/kerosene` page links to it.
+- **등유 알리미 (lead part, about 65–70% of the report and demo):** predicts when a household's heating kerosene runs out, an AI calls the elderly resident first and places the order with consent, and flags households that may be going without heat. Built by 김형준·목서환 as a separate app (github.com/mokseo42-oss/deungyu-alimi, https://deungyu-alimi.vercel.app). This site's `/kerosene` page links to it.
 - **주유 챗봇 (supporting part, about 25–30%):** drivers ask in plain Korean and get prices that come only from 오피넷 lookups, each with the time it was reported. Built by 지현민·배재원 in this repository.
 
 ## Positioning
@@ -36,10 +36,10 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 - Next.js 16 app router, Tailwind CSS 4, TypeScript.
 - Working now: 울산 최저가 lookup (`lowTop10`), station detail with 기준 시각 (`detailById`), the fixed question "지난 고시 뒤 우리 동네는?" from aggregated past-price data, and a Claude (Opus 5.5) chatbot that calls those lookups as tools.
 - Added 2026-11-13: 실질비용 ranking from a 울주군 읍면 start point (`aroundAll`, straight-line round trip), a 유류세 인하 alert preview combining 언제·어디서·얼마 (official values in `src/lib/policy.ts`: extended to 2027-01-31), price-alert conditions the AI proposes and the user saves in the browser, a server-side number check on AI answers, card summaries in chat history, and per-visitor call limits.
-- Added 2026-11-13 (second pass): a 최고가격 notice explainer shown right after each announcement (values in `src/lib/policy.ts` `PRICE_CAP`), 내 차 주유 예보 from 2–5 fill records (interval average, no price prediction; records kept in the browser), and links from `/kerosene` and the chatbot to 등유 안심.
+- Added 2026-11-13 (second pass): a 최고가격 notice explainer shown right after each announcement (values in `src/lib/policy.ts` `PRICE_CAP`), 내 차 주유 예보 from 2–5 fill records (interval average, no price prediction; records kept in the browser), and links from `/kerosene` and the chatbot to 등유 알리미.
 - Added 2026-11-13 (third pass): a bright white redesign (left menu on desktop, bottom tabs on phones) with a personalized home; 간편 로그인 that keeps name, location and car only in the browser (no password); nationwide "my location" lookups (phone location converted to KATEC, rounded to 100 m, which also fills the user's 시군구 from the nearest station's SIGUNCD; or an 오피넷 area code picked by hand); the chatbot prompt and tools follow the saved profile (coordinates never go to the AI); and `/alerts`, where users set price, 최고가격, 유류세 and 주유 예보 conditions and see which alerts they would get and when.
 - Added 2026-11-13 (fourth pass): the home opens with 오늘의 기름 소식 instead of a generic greeting: 오피넷 average prices for my area and nationwide with the change since yesterday, the 최고가격 round in force, days left in the 유류세 cut, and the next alert. Real news articles are not shown; a news feed would need a separate source and a rule for checking it.
-- Changed 2026-11-13: the 등유 안심 menu, home line and card button were removed from 기름알리미. The two apps will sit under one parent site later; until then the chatbot still points kerosene-household questions to 등유 안심.
+- Changed 2026-11-13: the 등유 알리미 menu, home line and card button were removed from 기름알리미. The two apps will sit under one parent site later; until then the chatbot still points kerosene-household questions to 등유 알리미.
 - Added 2026-11-13 (fifth pass): nationwide areas for the chatbot and `/alerts` (area names like '부산 해운대구' resolved to 오피넷 codes; 광주 and 전남 come as one '전남광주' since the 2026-07-01 merger); a price explainer (change since yesterday, 7-day national change, which round the 최고가격 has held since, average price vs the supply cap, 유류세 cut; no causes outside those values); station lookup by name (`searchByName`); a standing check for a station (gap to the 시군구 average, rank within 5 km, cheaper option nearby), which also answers whether an 알뜰 station is really cheap; and receipt photos read by Claude into a fill record card the user confirms before saving (photo not stored; card and approval numbers ignored).
 - Added 2026-11-14: a fuel ledger (last 30 fills with price, total, and station from receipts, kept in the browser); a monthly report card (fills, liters, money spent, distance estimated from liters × the car's km/L, cost per km, change from last month, and money saved or lost against that day's 시도 average price from `dateAreaAvgRecentPrice`); a station check (quality certification, 착한주유소, last price report date, gap to nearby prices, and receipts compared with the reported price only when the receipt is newer than that report; never a verdict of wrongdoing); and 요소수 stock search (`ureaPrice`, in-stock stations within 30 km or cheapest in an area, with phone numbers and report times).
 - Fill amount in won (2026-11-14, later): people order fuel as "5만원어치" or "가득", not liters, and few know their tank size. 내 정보, the chat amount picker, and the next-fill record card now take 3만/5만/7만/10만원, 가득, or a typed amount. Calculations still run in liters: an amount is converted with today's national average price, and 가득 uses the median of recent receipt liters (40 L until there are two). Answers say "5만원어치(약 27L) 기준". Profiles saved in liters move to 가득 with that liter value, so their numbers do not change. This is step 1 of 3; car-model fuel economy and dashboard photos come next (`docs/superpowers/specs/2026-11-14-won-amount-fuel-economy-design.md`).
@@ -76,7 +76,7 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 2. Show when a price is from, and say it may differ at the pump.
 3. Say what the service cannot answer rather than guess or predict.
 4. Describe stations neutrally; aggregate where naming could harm.
-5. 등유 안심 leads; the chatbot shows the service is for everyone.
+5. 등유 알리미 leads; the chatbot shows the service is for everyone.
 
 ## Accessibility & Inclusion
 
