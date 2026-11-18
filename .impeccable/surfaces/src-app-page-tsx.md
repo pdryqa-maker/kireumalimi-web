@@ -7,7 +7,7 @@ related_targets: ["src/app/chat/page.tsx","src/components/ChatPanel.tsx"]
 
 ## Scope
 
-- Surface: the site's first screen (`/`), which is the 주유 챗봇 for now. `/chat` points here. Whether 등유 안심 joins this site is undecided, so it is not linked.
+- Surface: the site's first screen (`/`), which is the 주유 챗봇 for now. `/chat` points here. Whether 등유 알리미 joins this site is undecided, so it is not linked.
 - Visitor mode: Operate. Judges watch a demo of a driver asking about 울주군 fuel prices.
 - Job: ask in plain Korean or tap a suggested question, read prices with their 기준 시각, open a station's detail, see the past-notice record.
 - Important states: empty (first visit), user question, loading (skeleton), price list, station detail, plain answer, error with retry.
