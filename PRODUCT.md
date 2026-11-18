@@ -60,7 +60,7 @@ Every number shown comes from 오피넷 data, never from the AI. Prices carry th
 - Service name: 기름알리미.
 - Footer on every screen: "유가 정보: 한국석유공사 오피넷 제공 · 공공데이터 활용 · 팀 유일무이" ('시제품' dropped on 2026-11-13 at 배재원's request; screens still say plainly when something is only a preview).
 - Team logo of 유일무이 must appear. Assets: `10월/인스타그램 게시물 레퍼런스/유일무이 로고.png` (yellow "1" with oil drop on black circle), `유일무이 로고_2.png` (black 유일무이 wordmark with 油一無二), `유일무이 로고_3.png` (black "1" on yellow circle).
-- 한국석유공사 logo: shown in the header as the supporters-program mark, using the original file unchanged (2026-11-13, 배재원's request; needs team confirmation). The flame accent takes its red-orange from that logo. Do not imitate 오피넷 pages or logos.
+- 한국석유공사 logo and symbol: not used (removed from the header and the browser-tab icon on 2026-11-18 by team decision, so the prototype is not mistaken for an official service; the tab icon is the team mark). The flame accent keeps the red-orange first taken from that logo. Do not imitate 오피넷 pages or logos.
 - Voice: polite Korean 존댓말, short, no hype; never accuse stations of wrongdoing ("아직 그대로", not "늦게 내린").
 
 ## Evidence on Hand
