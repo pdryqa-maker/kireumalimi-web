@@ -92,10 +92,8 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
   const amount = amountChoice ?? profile.amount;
   const place = usablePlace(placeChoice ?? initialPlace(profile), profile);
   const placeName = placeLabel(place, profile);
-  const homeArea = profile.area;
-  // 출발 위치(또는 내 지역)가 필요한 상자를 고르기 전에 누르면 위치 고르기 창을 연다.
+  // 출발 위치가 필요한 상자를 고르기 전에 누르면 위치 고르기 창을 연다.
   const needsPlace = place === NO_PLACE ? { info: "출발 위치를 먼저 골라 주세요", action: "위치 고르기", pick: true } : {};
-  const needsArea = !homeArea ? { info: "내 지역을 먼저 골라 주세요", action: "위치 고르기", pick: true } : {};
 
   // 이름이 필요한 상자는 마지막 영수증 주유소를 미리 넣는다. 이용자가 고치면 그 값을 쓴다.
   const lastStation = (mounted ? ledger.findLast((entry) => entry.stationName)?.stationName : null) ?? "";
@@ -225,13 +223,13 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
     {
       key: "alttle",
       name: "알뜰주유소 진짜 싼지",
-      description: "알뜰주유소가 동네 평균보다 정말 싼지 봐요",
+      description: "근처 알뜰주유소가 반경 5km 평균보다 정말 싼지 봐요",
       ai: true,
       Icon: ReceiptIcon,
-      info: `내 지역(${homeArea?.name}) 기준 · ${fuelText}`,
+      info: `${placeName} 반경 5km · ${fuelText}`,
       action: "확인",
-      command: { kind: "ask", question: `${homeArea?.name} 알뜰주유소, 진짜 싼 거 맞아?` },
-      ...needsArea,
+      command: { kind: "ask", question: `${placeName} 근처 알뜰주유소, 진짜 싼 거 맞아?` },
+      ...needsPlace,
     },
   ];
 
@@ -265,7 +263,7 @@ export default function ExploreDashboard({ fixedQuestion, region }: { fixedQuest
           onActivity={onActivity}
           examples={[
             "울산 남구에서 제일 싼 경유 어디야?",
-            placeName ? `${placeName}에서 LPG 충전소 거리까지 따지면 어디가 나아?` : "부산 해운대구 알뜰주유소, 진짜 싼 거 맞아?",
+            placeName ? `${placeName}에서 LPG 충전소 거리까지 따지면 어디가 나아?` : "서하남주유소 지금 얼마야?",
           ]}
         />
       </DashboardPanel>
